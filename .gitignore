@@ -1,0 +1,22 @@
+# Secrets — never commit
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE / editor
+.claude/
+.vscode/
+.idea/
+
+# Generated Plymouth assets (built by deploy/setup.sh via prepare_logo.py)
+deploy/plymouth/td5-dash/logo.png
+deploy/plymouth/td5-dash/shimmer.png

@@ -1,0 +1,33 @@
+[Unit]
+Description=TD5 Dashboard Backend
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__REPO_DIR__/backend
+Environment=TD5_MOCK=0
+Environment=VICTRON_MOCK=0
+Environment=STARLINK_MOCK=0
+Environment=WEATHER_MOCK=0
+Environment=WEATHER_LAT=52.4862
+Environment=WEATHER_LON=-1.8904
+Environment=WEATHER_LOCATION=
+Environment=VICTRON_SHUNT_MAC=
+Environment=VICTRON_SHUNT_KEY=
+Environment=VICTRON_MPPT_MAC=
+Environment=VICTRON_MPPT_KEY=
+Environment=VICTRON_ORION_MAC=
+Environment=VICTRON_ORION_KEY=
+Environment=SPOTIFY_MOCK=0
+Environment=SPOTIFY_CLIENT_ID=
+Environment=SPOTIFY_CLIENT_SECRET=
+Environment=SPOTIFY_REFRESH_TOKEN=
+ExecStart=__REPO_DIR__/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

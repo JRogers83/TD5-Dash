@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=TD5 Dash
+Description=Land Rover badge splash — black background with shimmer
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/td5-dash
+ScriptFile=/usr/share/plymouth/themes/td5-dash/td5-dash.script

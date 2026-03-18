@@ -1,0 +1,31 @@
+#!/bin/sh
+# TD5 Dash — Chromium kiosk X session
+# Launched by startx from ~/.bash_profile on tty1.
+
+# Disable screen blanking and power management
+xset -dpms
+xset s off
+xset s noblank
+
+# Hide mouse cursor after 0.5 s of inactivity
+unclutter -idle 0.5 -root &
+
+# Wait for the FastAPI backend to become ready (max ~30 s)
+i=0
+until curl -sf http://localhost:8000 >/dev/null 2>&1; do
+    sleep 0.5
+    i=$((i + 1))
+    [ $i -ge 60 ] && break
+done
+
+exec chromium-browser \
+    --kiosk \
+    --noerrdialogs \
+    --disable-infobars \
+    --disable-session-crashed-bubble \
+    --no-first-run \
+    --disable-translate \
+    --disable-features=TranslateUI \
+    --check-for-update-interval=31536000 \
+    --use-fake-ui-for-media-stream \
+    http://localhost:8000

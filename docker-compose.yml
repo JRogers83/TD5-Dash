@@ -1,0 +1,14 @@
+services:
+  td5-dash:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env          # all variables from .env are passed into the container
+    volumes:
+      # Live-reload mounts: edit files locally, changes reflect instantly
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+    restart: unless-stopped
+    # --reload watches for Python file changes in development
+    command: ["python", "-m", "uvicorn", "main:app",
+              "--host", "0.0.0.0", "--port", "8000", "--reload"]

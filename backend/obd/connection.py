@@ -1,0 +1,183 @@
+"""
+TD5 K-Line physical layer via PyFtdi (VAG-COM KKL cable, FTDI FT232RL).
+
+The KKL cable contains a built-in K-Line level shifter (TTL ↔ 12 V) and
+presents as an FTDI FT232RL USB-serial device (/dev/ttyUSB0 on Linux).
+
+Fast-init sequence (ISO 9141-2 / KWP2000):
+  1. Switch FTDI TX pin to GPIO bitbang mode
+  2. Hold K-Line LOW  for 25 ms  — wakes the ECU
+  3. Hold K-Line HIGH for 25 ms  — signals end of init pulse
+  4. Return to UART mode at 10,400 baud
+  5. The ECU responds with keyword bytes; the session can begin
+
+The fast-init requires direct GPIO control of the TX pin, which is only
+possible via PyFtdi's bitbang mode — ordinary pyserial cannot do this.
+
+Reference: github.com/hairyone/pyTD5Tester
+"""
+
+import logging
+import time
+
+from . import protocol as P
+
+log = logging.getLogger(__name__)
+
+
+class KLineError(Exception):
+    """Raised when K-Line communication fails."""
+
+
+class KLineConnection:
+    """
+    Low-level K-Line connection over a VAG-COM KKL FTDI cable.
+
+    Parameters
+    ----------
+    url : str
+        PyFtdi device URL. Default 'ftdi://ftdi:232/1' resolves to the first
+        FT232-series device found on the bus — correct for a Pi with only the
+        KKL cable attached. Override with the TD5_FTDI_URL environment variable
+        if multiple FTDI devices are present.
+    """
+
+    def __init__(self, url: str = 'ftdi://ftdi:232/1') -> None:
+        self._url  = url
+        self._ftdi = None
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────────
+
+    def open(self) -> None:
+        """Open the FTDI device, perform fast-init, and prepare for UART I/O."""
+        try:
+            from pyftdi.ftdi import Ftdi
+        except ImportError as exc:
+            raise KLineError(
+                "pyftdi is not installed — add it to requirements.txt and "
+                "run:  pip install pyftdi"
+            ) from exc
+
+        log.info("Opening FTDI device: %s", self._url)
+        self._ftdi = Ftdi()
+        self._ftdi.open_from_url(self._url)
+        self._fast_init()
+        log.info("Fast-init complete — K-Line ready at %d baud", P.BAUD_RATE)
+
+    def close(self) -> None:
+        if self._ftdi:
+            try:
+                self._ftdi.close()
+            except Exception:
+                pass
+            self._ftdi = None
+
+    def __enter__(self) -> "KLineConnection":
+        self.open()
+        return self
+
+    def __exit__(self, *_) -> None:
+        self.close()
+
+    # ── Fast-init ──────────────────────────────────────────────────────────────
+
+    def _fast_init(self) -> None:
+        """
+        ISO 9141-2 fast-init: drive K-Line low then high to wake the ECU.
+
+        Uses FTDI bitbang mode to directly control the TX pin (GPIO bit 0).
+        Timing is critical — the ECU expects the low pulse to be 25 ms ±3 ms.
+
+        Troubleshooting:
+          - ECU not responding after init → try adjusting FAST_INIT_LOW_MS
+            in protocol.py by ±2 ms. Some TD5 ECUs are picky about timing.
+          - 'device busy' error → ensure no other process holds /dev/ttyUSB0
+            (e.g. `sudo lsof /dev/ttyUSB0`).
+          - Key bytes not received after init → increase SETTLE_MS.
+        """
+        from pyftdi.ftdi import Ftdi
+
+        TX_PIN = 0x01   # TX is bit 0 in the FT232 GPIO map
+
+        # Switch to bitbang mode — TX pin becomes a manually-driven GPIO output
+        self._ftdi.set_bitmode(TX_PIN, Ftdi.BitMode.BITBANG)
+
+        self._ftdi.write_data(bytes([0x00]))                     # K-Line LOW
+        time.sleep(P.FAST_INIT_LOW_MS  / 1000.0)
+
+        self._ftdi.write_data(bytes([TX_PIN]))                   # K-Line HIGH
+        time.sleep(P.FAST_INIT_HIGH_MS / 1000.0)
+
+        # Return to normal UART mode
+        self._ftdi.set_bitmode(0x00, Ftdi.BitMode.RESET)
+        self._ftdi.set_baudrate(P.BAUD_RATE)
+        self._ftdi.purge_buffers()
+        time.sleep(P.SETTLE_MS / 1000.0)
+
+    # ── Frame I/O ──────────────────────────────────────────────────────────────
+
+    def send(self, frame: bytes) -> None:
+        """
+        Write a KWP2000 frame byte-by-byte with inter-byte timing.
+
+        The inter-byte delay (P4) gives the ECU's UART enough time to
+        process each byte before the next arrives.
+        """
+        log.debug("TX: %s", frame.hex(' '))
+        for byte in frame:
+            self._ftdi.write_data(bytes([byte]))
+            time.sleep(P.P4_INTER_BYTE_MS / 1000.0)
+
+    def recv(self, length: int, timeout_s: float = 0.5) -> bytes:
+        """
+        Read exactly `length` bytes, raising KLineError on timeout.
+        """
+        buf      = bytearray()
+        deadline = time.monotonic() + timeout_s
+
+        while len(buf) < length:
+            if time.monotonic() > deadline:
+                raise KLineError(
+                    f"Timeout waiting for {length} bytes — "
+                    f"received {len(buf)}: {buf.hex()}"
+                )
+            chunk = self._ftdi.read_data(length - len(buf))
+            if chunk:
+                buf.extend(chunk)
+            else:
+                time.sleep(0.005)
+
+        log.debug("RX: %s", bytes(buf).hex(' '))
+        return bytes(buf)
+
+    def recv_frame(self, timeout_s: float = 1.0) -> bytes:
+        """
+        Read a complete KWP2000 frame, using the length byte to know when to stop.
+
+        Frame structure:
+            [0x80] [len] [tgt_addr] [src_addr] [service] [...data...] [checksum]
+             ^^^^^^^^^^^^
+             2-byte header — len tells us how many bytes follow
+
+        Returns the full raw frame including header and checksum.
+        Raises KLineError if the checksum does not match.
+        """
+        header = self.recv(2, timeout_s)
+
+        if header[0] != 0x80:
+            raise KLineError(
+                f"Unexpected frame header byte: 0x{header[0]:02X} "
+                f"(expected 0x80) — full header: {header.hex()}"
+            )
+
+        body_and_checksum = self.recv(header[1] + 1)   # len bytes + 1 checksum
+        frame = header + body_and_checksum
+
+        expected = P.checksum(frame[:-1])
+        if frame[-1] != expected:
+            raise KLineError(
+                f"Checksum mismatch — got 0x{frame[-1]:02X}, "
+                f"expected 0x{expected:02X} — frame: {frame.hex(' ')}"
+            )
+
+        return frame

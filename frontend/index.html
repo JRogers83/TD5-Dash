@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1280, initial-scale=1.0, user-scalable=no">
+  <title>TD5</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="carousel">
+    <div id="views">
+
+      <!-- ── View 0 · Engine ─────────────────────── -->
+      <div class="view" id="view-engine">
+        <div class="engine-content">
+          <div class="gauge-col"><canvas id="canvas-rpm"      aria-label="Engine RPM"></canvas></div>
+          <div class="gauge-col"><canvas id="canvas-boost"    aria-label="Boost pressure"></canvas></div>
+          <div class="gauge-col"><canvas id="canvas-throttle" aria-label="Throttle position"></canvas></div>
+
+          <div class="engine-stats">
+            <div class="stat-tile">
+              <div class="stat-label">Battery</div>
+              <div class="engine-stat-bottom">
+                <div class="stat-value" id="txt-battery">14.1 V</div>
+                <div class="status-dot" id="dot-battery"></div>
+              </div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-label">Coolant</div>
+              <div class="engine-stat-bottom">
+                <div class="stat-value" id="txt-coolant">88 °C</div>
+                <div class="status-dot" id="dot-coolant"></div>
+              </div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-label">Air Temp</div>
+              <div class="engine-stat-bottom">
+                <div class="stat-value" id="txt-air-temp">22 °C</div>
+                <div class="status-dot" id="dot-air-temp"></div>
+              </div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-label">Fuel Temp</div>
+              <div class="engine-stat-bottom">
+                <div class="stat-value" id="txt-fuel-temp">35 °C</div>
+                <div class="status-dot" id="dot-fuel-temp"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── View 1 · Spotify ───────────────────── -->
+      <div class="view" id="view-spotify">
+
+        <!-- Spectrum visualiser — sits behind all other Spotify content -->
+        <canvas id="sp-visualizer"></canvas>
+        <!-- CRT scanline overlay -->
+        <div class="sp-scanlines"></div>
+
+        <!-- Disconnected / nothing playing -->
+        <div class="sp-disconnected" id="sp-disconnected">
+          <div class="sp-disc-title" id="sp-disc-title">No Active Device</div>
+          <div class="sp-disc-sub"   id="sp-disc-sub">Open Spotify on any device to begin</div>
+        </div>
+
+        <!-- Player -->
+        <div class="sp-content" id="sp-player" style="display:none">
+
+          <!-- Album art -->
+          <div class="sp-art">
+            <img id="sp-art-img" src="" alt="Album art" style="display:none">
+            <div class="sp-art-placeholder" id="sp-art-placeholder">
+              <!-- Music note icon -->
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Track info, progress, controls -->
+          <div class="sp-info">
+            <div class="sp-track"  id="sp-track">—</div>
+            <div class="sp-artist" id="sp-artist">—</div>
+            <div class="sp-device" id="sp-device" style="display:none"></div>
+
+            <div class="sp-progress-area">
+              <span class="sp-time" id="sp-time-current">0:00</span>
+              <div class="sp-progress-bar">
+                <div class="sp-progress-fill" id="sp-progress-fill"></div>
+              </div>
+              <span class="sp-time sp-time--end" id="sp-time-total">0:00</span>
+            </div>
+
+            <div class="sp-controls">
+              <button class="sp-btn" id="sp-prev" aria-label="Previous">
+                <svg viewBox="0 0 24 24">
+                  <rect x="4" y="5" width="2.5" height="14" rx="1"/>
+                  <polygon points="19,5 8,12 19,19"/>
+                </svg>
+              </button>
+              <button class="sp-btn sp-btn--play" id="sp-play" aria-label="Play / Pause">
+                <svg id="sp-play-icon" viewBox="0 0 24 24">
+                  <polygon points="6,4 20,12 6,20"/>
+                </svg>
+              </button>
+              <button class="sp-btn" id="sp-next" aria-label="Next">
+                <svg viewBox="0 0 24 24">
+                  <polygon points="5,5 16,12 5,19"/>
+                  <rect x="17.5" y="5" width="2.5" height="14" rx="1"/>
+                </svg>
+              </button>
+              <button class="sp-btn sp-btn--like" id="sp-like-btn" aria-label="Like">
+                <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                </svg>
+              </button>
+              <button class="sp-btn sp-btn--browse" id="sp-browse-btn" aria-label="Browse playlists">
+                <!-- queue/playlist icon: three bars + play triangle -->
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="4"  width="18" height="2.5" rx="1.2"/>
+                  <rect x="3" y="11" width="11" height="2.5" rx="1.2"/>
+                  <rect x="3" y="17" width="11" height="2.5" rx="1.2"/>
+                  <polygon points="16,9.5 22,13 16,16.5"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ── Playlist browser panel — overlays player when open ── -->
+        <div id="sp-browse" style="display:none">
+          <div class="sp-browse-hdr">
+            <button class="sp-browse-hdr-btn" id="sp-browse-back"
+                    aria-label="Back" style="visibility:hidden">
+              <!-- left chevron -->
+              <svg viewBox="0 0 24 24"><polygon points="15,4 7,12 15,20"/></svg>
+            </button>
+            <span id="sp-browse-title">Playlists</span>
+            <button class="sp-browse-hdr-btn" id="sp-browse-close" aria-label="Close">
+              <!-- X -->
+              <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <line x1="5" y1="5" x2="19" y2="19"/>
+                <line x1="19" y1="5" x2="5" y2="19"/>
+              </svg>
+            </button>
+          </div>
+          <div id="sp-browse-body"></div>
+        </div>
+
+      </div>
+
+      <!-- ── View 2 · Victron ───────────────────── -->
+      <div class="view" id="view-victron">
+        <div class="victron-content">
+
+          <div class="victron-soc">
+            <div class="stat-label">Leisure Battery</div>
+            <svg class="gauge" viewBox="0 0 200 200" aria-label="State of charge">
+              <circle class="gauge-track" cx="100" cy="100" r="80"
+                stroke-dasharray="377 1000"
+                transform="rotate(135, 100, 100)"/>
+              <circle class="gauge-value" cx="100" cy="100" r="80"
+                stroke-dasharray="0 1000"
+                transform="rotate(135, 100, 100)"
+                id="arc-soc"/>
+              <text class="g-val"   x="100" y="94"  id="txt-soc">87</text>
+              <text class="g-unit"  x="100" y="117">%</text>
+              <text class="g-label" x="100" y="185">State of Charge</text>
+            </svg>
+            <span class="charge-badge" id="txt-charge-state">—</span>
+          </div>
+
+          <div class="vdivider"></div>
+
+          <div class="victron-stats">
+            <div class="stat-label">Victron Stats</div>
+            <div class="stat-grid">
+              <div class="stat-tile">
+                <div class="stat-label">Voltage</div>
+                <div class="stat-value" id="txt-voltage">13.2 V</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Current</div>
+                <div class="stat-value" id="txt-current">−2.1 A</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Solar Today</div>
+                <div class="stat-value" id="txt-solar">423 Wh</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Flow</div>
+                <div class="stat-value" id="txt-flow">Idle</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">DC-DC</div>
+                <div class="stat-value" id="txt-orion-state">Off</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Alt Voltage</div>
+                <div class="stat-value" id="txt-orion-input">— V</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="vdivider"></div>
+
+          <!-- ── Weather panel ──────────────────── -->
+          <div class="wx-panel">
+            <div class="wx-header">
+              <div class="wx-location" id="wx-location"></div>
+              <div class="status-dot" id="wx-dot"></div>
+            </div>
+
+            <!-- Shown until first data arrives -->
+            <div class="wx-loading" id="wx-loading">Fetching weather…</div>
+
+            <!-- Today — hidden until first data -->
+            <div class="wx-today" id="wx-today" style="display:none">
+              <div class="wx-text">
+                <div class="wx-temp" id="wx-temp"></div>
+                <div class="wx-details">
+                  <div class="wx-desc" id="wx-desc"></div>
+                  <div class="wx-detail-row">
+                    <span id="wx-wind"></span>
+                    <span id="wx-humidity"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="wx-icon" id="wx-icon"></div>
+            </div>
+
+            <!-- 4-day forecast -->
+            <div class="wx-forecast" id="wx-forecast"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── View 3 · Starlink ─────────────────── -->
+      <div class="view" id="view-starlink">
+        <div class="starlink-content">
+
+          <!-- Connection state -->
+          <div class="sl-state-panel">
+            <div class="stat-label">Starlink Mini</div>
+            <span class="charge-badge charge-badge--amber sl-roaming-badge"
+                  id="sl-roaming-badge" style="display:none">Roaming</span>
+            <div class="stat-tile">
+              <div class="stat-label">Status</div>
+              <div class="engine-stat-bottom">
+                <div class="stat-value" id="sl-status-txt">—</div>
+                <div class="status-dot" id="sl-status-dot"></div>
+              </div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-label">Obstruction</div>
+              <div class="engine-stat-bottom">
+                <div class="stat-value" id="sl-obstruction-txt">—</div>
+                <div class="status-dot" id="sl-obstruction-dot"></div>
+              </div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-label">GPS</div>
+              <div class="engine-stat-bottom">
+                <div class="stat-value" id="sl-gps">No Fix</div>
+                <div class="status-dot" id="sl-gps-dot"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="vdivider"></div>
+
+          <!-- Live stats -->
+          <div class="sl-stats">
+            <div class="stat-label">Starlink Stats</div>
+            <div class="stat-grid">
+              <div class="stat-tile">
+                <div class="stat-label">Download</div>
+                <div class="stat-value" id="sl-down">—</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Upload</div>
+                <div class="stat-value" id="sl-up">—</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Latency</div>
+                <div class="stat-value" id="sl-latency">—</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Packet Loss</div>
+                <div class="stat-value" id="sl-loss">—</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Obstruction</div>
+                <div class="stat-value" id="sl-obstruction-pct">—</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Uptime</div>
+                <div class="stat-value" id="sl-uptime">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="vdivider"></div>
+
+          <!-- Alerts -->
+          <div class="sl-side">
+            <div class="stat-label">Alerts</div>
+            <div class="sl-alerts" id="sl-alerts"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── View 4 · Settings ──────────────────── -->
+      <div class="view" id="view-settings">
+        <div class="settings-content">
+
+          <!-- Col 1 — Connectivity -->
+          <div class="settings-col settings-conn-col">
+            <div class="stat-label">Connectivity</div>
+            <div class="settings-conn">
+              <div class="stat-tile settings-conn-tile">
+                <div class="stat-label">Wi-Fi</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="txt-wifi">Off</div>
+                  <div class="status-dot" id="dot-wifi"></div>
+                </div>
+              </div>
+              <div class="stat-tile settings-conn-tile">
+                <div class="stat-label">Bluetooth</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="txt-bt">Off</div>
+                  <div class="status-dot" id="dot-bt"></div>
+                </div>
+              </div>
+              <div class="stat-tile settings-conn-tile">
+                <div class="stat-label">Override</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="txt-override">Off</div>
+                  <div class="status-dot" id="dot-override"></div>
+                </div>
+              </div>
+              <div class="stat-tile settings-conn-tile">
+                <div class="stat-label">Data Feed</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="txt-conn">Offline</div>
+                  <div class="status-dot" id="conn-dot"></div>
+                </div>
+              </div>
+              <div class="stat-tile settings-conn-tile">
+                <div class="stat-label">Starlink</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="txt-starlink">—</div>
+                  <div class="status-dot" id="dot-starlink"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="vdivider"></div>
+
+          <!-- Col 2 — Brightness + System metrics (2-col grid) -->
+          <div class="settings-col">
+            <div class="stat-label">Brightness</div>
+
+            <div class="bright-mode-row">
+              <button class="bright-mode-btn" id="bright-mode-day"
+                      onclick="setBrightMode('day')">Day</button>
+              <button class="bright-mode-btn" id="bright-mode-night"
+                      onclick="setBrightMode('night')">Night</button>
+            </div>
+
+            <div class="bright-row">
+              <div class="bright-label">Day</div>
+              <div class="bright-control">
+                <button class="bright-btn" onclick="adjustBrightness('day', -10)">−</button>
+                <div class="bright-bar-track">
+                  <div class="bright-bar-fill" id="bar-bright-day"></div>
+                </div>
+                <button class="bright-btn" onclick="adjustBrightness('day', +10)">+</button>
+              </div>
+            </div>
+
+            <div class="bright-row">
+              <div class="bright-label">Night</div>
+              <div class="bright-control">
+                <button class="bright-btn" onclick="adjustBrightness('night', -10)">−</button>
+                <div class="bright-bar-track">
+                  <div class="bright-bar-fill" id="bar-bright-night"></div>
+                </div>
+                <button class="bright-btn" onclick="adjustBrightness('night', +10)">+</button>
+              </div>
+            </div>
+
+            <div class="stat-label settings-lower-label">System</div>
+            <div class="settings-sys-grid">
+              <div class="stat-tile settings-sys-tile">
+                <div class="stat-label">CPU Temp</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="txt-cpu-temp">—</div>
+                  <div class="status-dot" id="dot-cpu-temp"></div>
+                </div>
+              </div>
+              <div class="stat-tile settings-sys-tile">
+                <div class="stat-label">CPU Load</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="txt-cpu-load">—</div>
+                  <div class="status-dot" id="dot-cpu-load"></div>
+                </div>
+              </div>
+              <div class="stat-tile settings-sys-tile">
+                <div class="stat-label">RAM</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="txt-ram">—</div>
+                  <div class="status-dot" id="dot-ram"></div>
+                </div>
+              </div>
+              <div class="stat-tile settings-sys-tile">
+                <div class="stat-label">Disk</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="txt-disk">—</div>
+                  <div class="status-dot" id="dot-disk"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="vdivider"></div>
+
+          <!-- Col 3 — Controls + Uptime / Throttle -->
+          <div class="settings-col settings-col--top">
+            <div class="stat-label">Controls</div>
+            <button class="relay-btn" id="btn-amp" onclick="toggleRelay('amp')">
+              <span class="relay-btn__label" id="lbl-amp">Amp Off</span>
+            </button>
+
+            <div class="stat-label settings-lower-label">Software</div>
+            <button class="relay-btn" id="btn-update" onclick="triggerUpdate()">
+              <span class="relay-btn__label" id="lbl-update">Check for Updates</span>
+            </button>
+            <div class="update-status" id="update-status"></div>
+
+            <div class="stat-label settings-lower-label">Pi Health</div>
+            <div class="settings-sys-grid">
+              <div class="stat-tile settings-sys-tile">
+                <div class="stat-label">Uptime</div>
+                <div class="stat-value" id="txt-uptime">—</div>
+              </div>
+              <div class="stat-tile settings-sys-tile">
+                <div class="stat-label">Throttle</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="txt-throttle">—</div>
+                  <div class="status-dot" id="dot-throttle"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="lib/gauge.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

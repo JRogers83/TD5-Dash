@@ -1,0 +1,12 @@
+# Default: normalise line endings to LF in the repo
+* text=auto eol=lf
+
+# Shell scripts and deploy files must always be LF
+*.sh        text eol=lf
+*.service   text eol=lf
+xinitrc     text eol=lf
+*.py        text eol=lf
+
+# Binary files — no line-ending conversion
+*.png       binary
+*.min.js    binary

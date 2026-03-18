@@ -1,0 +1,1173 @@
+/* ── Reset ────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Design tokens ────────────────────────────── */
+:root {
+  --bg:         #0d0d0d;
+  --surface:    #181818;
+  --border:     #2a2a2a;
+  --text:       #e8e8e8;
+  --text-muted: #888;
+  --text-dim:   #444;
+
+  --c-green:  #00e676;
+  --c-amber:  #ffab40;
+  --c-red:    #ff5252;
+  --c-blue:   #40c4ff;
+  --c-track:  #242424;
+}
+
+/* ── Root — landscape 1280×400, full screen ───── */
+html, body {
+  width: 1280px;
+  height: 400px;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Carousel — full height ───────────────────── */
+#carousel {
+  width: 1280px;
+  height: 400px;
+  overflow: hidden;
+}
+
+#views {
+  width: 1280px;
+  height: 100%;
+  position: relative;
+}
+
+.view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1280px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  will-change: transform;   /* GPU compositing hint */
+}
+
+/* ── Connection status dot (Settings view) ─────── */
+#conn-dot.connected { background: var(--c-green); }
+#conn-dot.error     { background: var(--c-red); }
+
+/* ── Status dot sizing — single rule covers all views ──
+   Any status-dot inside an engine-stat-bottom row (Engine, Settings,
+   Starlink, or any future view) uses the large 20px size for legibility.
+   Plain status-dots used outside this layout (Starlink status-list,
+   Victron badge rows etc.) keep the default 10px.              ── */
+.engine-stat-bottom .status-dot {
+  width: 20px;
+  height: 20px;
+}
+
+/* ── Engine view ──────────────────────────────── */
+/* Width breakdown: padding(32) + 4×gap(64) + RPM(290) + Boost(290)
+   + Throttle(290) + Coolant(174) + Stats(140) = 1280px            */
+.engine-content {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 8px 16px;
+  gap: 16px;
+  min-height: 0;
+}
+
+.gauge-col {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.gauge-col canvas { display: block; }
+
+/* Stats column */
+.engine-stats {
+  flex: 0 0 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: stretch;
+  justify-content: center;
+}
+
+.engine-stats .stat-tile {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 4px;
+}
+
+/* Value + status dot in a row, below the label.
+   justify-content: space-between pins the dot to the right edge of the tile
+   regardless of how wide the value text is. */
+.engine-stat-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ── Stat tiles ───────────────────────────────────────────────────────────
+   CANONICAL TILE SPEC — do not override padding/font in per-view rules.
+   All stat tiles across all views share these dimensions for visual
+   consistency. The only legitimate per-view overrides are layout
+   properties (flex, grid placement) not sizing.
+
+   Canonical sizes:
+     .stat-tile      padding: 8px 12px
+     .stat-label     font-size: 20px  (uppercase, muted)
+     .stat-value     font-size: 30px  (tabular-nums, semibold)
+
+   Exception: Settings tiles (settings-conn-tile / settings-sys-tile)
+   use compact sizing (6px 10px / 24px) because they appear in a dense
+   2-col grid alongside controls — this is intentional density reduction.
+   ─────────────────────────────────────────────────────────────────────── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stat-tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 20px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-size: 30px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* ── Divider ──────────────────────────────────── */
+.vdivider {
+  width: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+  align-self: stretch;
+  margin: 4px 0;
+}
+
+/* ── SVG gauge (Victron SoC arc) ──────────────── */
+.gauge-track,
+.gauge-value {
+  fill: none;
+  stroke-width: 12;
+  stroke-linecap: round;
+}
+
+.gauge-track              { stroke: var(--c-track); }
+.gauge-value              { stroke: var(--c-green); }
+.gauge-value--amber       { stroke: var(--c-amber); }
+.gauge-value--red         { stroke: var(--c-red);   }
+
+.g-val {
+  font-size: 42px;
+  font-weight: 700;
+  fill: var(--text);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.g-unit {
+  font-size: 20px;
+  fill: var(--text-muted);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.g-label {
+  font-size: 20px;
+  fill: var(--text-muted);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Victron view ─────────────────────────────── */
+.victron-content {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  padding: 8px 12px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.victron-soc {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  flex-shrink: 0;
+  width: 260px;
+  gap: 8px;
+}
+
+.victron-soc .gauge {
+  width: 100%;
+  max-width: 250px;
+  height: auto;
+}
+
+.charge-badge {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c-green);
+  padding: 7px 20px;
+  border: 2px solid currentColor;
+  border-radius: 6px;
+  opacity: 0.8;
+}
+.charge-badge--amber { color: var(--c-amber); }
+.charge-badge--red   { color: var(--c-red);   }
+.charge-badge--dim   { color: var(--text-dim); }
+
+.victron-stats {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.victron-stats .stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: 8px;
+  align-content: center;
+}
+
+/* ── Settings view ────────────────────────────── */
+.settings-content {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  padding: 10px 16px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.settings-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* Connectivity column — header + compact tile grid */
+.settings-conn-col {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.settings-conn {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  align-content: start;   /* tiles use natural height, not stretched to fill column */
+}
+
+/* All settings tiles share the same padding and value font size for visual consistency */
+.settings-conn-tile,
+.settings-sys-tile {
+  padding: 6px 10px;
+}
+
+.settings-conn-tile .stat-value,
+.settings-sys-tile .stat-value {
+  font-size: 24px;
+}
+
+/* Dot sizing for settings tiles is handled by the global
+   .engine-stat-bottom .status-dot rule near the top of this file. */
+
+/* System metrics — 2-col grid in col 2 */
+.settings-sys-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+/* Controls column — content anchored to the top */
+.settings-col--top {
+  justify-content: flex-start;
+}
+
+/* Section label below another section in the same column */
+.settings-lower-label { margin-top: 6px; }
+
+/* ── Brightness controls ──────────────────────── */
+.bright-mode-row {
+  display: flex;
+  gap: 6px;
+}
+
+.bright-mode-btn {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.bright-mode-btn--active {
+  background: var(--c-green);
+  border-color: var(--c-green);
+  color: #000;
+}
+
+.bright-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Fixed-width label so both minus buttons align regardless of text length */
+.bright-label {
+  flex: 0 0 72px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.bright-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.bright-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 22px;
+  line-height: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.bright-btn:active { background: var(--border); }
+
+/* Visual fill bar replaces the numeric readout */
+.bright-bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--c-track);
+  border-radius: 4px;
+  overflow: hidden;
+  align-self: center;
+}
+
+.bright-bar-fill {
+  height: 100%;
+  background: var(--c-green);
+  border-radius: 4px;
+  width: 0%;
+  transition: width 0.15s;
+}
+
+/* ── OTA update status ────────────────────────── */
+.update-status {
+  font-size: 16px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 0;
+}
+
+.update-status--ok {
+  color: var(--text-muted);
+}
+
+/* ── Relay (amplifier) toggle ─────────────────── */
+.relay-btn {
+  width: 100%;
+  padding: 14px 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.relay-btn--on {
+  background: color-mix(in srgb, var(--c-green) 15%, transparent);
+  border-color: var(--c-green);
+  color: var(--c-green);
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+  transition: background 0.3s;
+}
+
+/* engine-stats dot sizing covered by .engine-stat-bottom .status-dot global rule */
+.status-dot.on   { background: var(--c-green); }
+.status-dot.off  { background: var(--text-dim); }
+.status-dot.warn { background: var(--c-amber); }
+.status-dot.red  { background: var(--c-red); }
+.status-dot.blue { background: var(--c-blue); }
+
+.status-info { display: flex; flex-direction: column; gap: 2px; }
+
+/* ── Spotify visualiser ───────────────────────── */
+#sp-visualizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1280px;
+  height: 400px;
+  z-index: 0;
+  opacity: 0.55;
+}
+
+/* CRT scanline overlay — classic 2000s aesthetic */
+.sp-scanlines {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 3px,
+    rgba(0, 0, 0, 0.12) 3px,
+    rgba(0, 0, 0, 0.12) 4px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Spotify view ─────────────────────────────── */
+.sp-disconnected {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.sp-disc-title {
+  font-size: 60px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.04em;
+}
+
+.sp-disc-sub {
+  font-size: 40px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sp-content {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  padding: 12px 16px;
+  gap: 20px;
+  min-height: 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* Album art — square, fills full content height */
+.sp-art {
+  flex-shrink: 0;
+  position: relative;
+  aspect-ratio: 1 / 1;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.sp-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sp-art-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+
+.sp-art-placeholder svg {
+  width: 80px;
+  height: 80px;
+  fill: currentColor;
+}
+
+/* Info panel */
+.sp-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 0;
+}
+
+.sp-track {
+  font-size: 48px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.02em;
+}
+
+.sp-artist {
+  font-size: 28px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Progress bar */
+.sp-progress-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.sp-time {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  width: 34px;
+}
+
+.sp-time--end { text-align: right; }
+
+.sp-progress-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--c-track);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.sp-progress-fill {
+  height: 100%;
+  background: var(--c-green);
+  border-radius: 2px;
+  transition: width 0.8s linear;
+}
+
+/* Controls */
+.sp-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding-top: 8px;
+}
+
+.sp-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sp-btn:active {
+  color: var(--text);
+  background: #2a2a2a;
+  border-color: #444;
+}
+
+.sp-btn svg {
+  width: 48px;
+  height: 48px;
+  fill: currentColor;
+  display: block;
+}
+
+.sp-btn--play {
+  color: var(--text);
+  background: #1e1e1e;
+  border-color: #3a3a3a;
+  padding: 20px;
+}
+
+.sp-btn--play svg {
+  width: 64px;
+  height: 64px;
+}
+
+.sp-btn--browse {
+  margin-left: 12px;   /* visual separation from transport buttons */
+  padding: 10px;
+}
+
+.sp-btn--browse svg {
+  width: 30px;
+  height: 30px;
+}
+
+.sp-btn--like {
+  margin-left: 12px;
+  padding: 10px;
+  color: var(--text-muted);
+}
+
+.sp-btn--like svg {
+  width: 30px;
+  height: 30px;
+  fill: none;
+}
+
+.sp-btn--liked svg {
+  fill: var(--c-green);
+  color: var(--c-green);
+  stroke: var(--c-green);
+}
+
+/* Device badge — playing-from label below album name */
+.sp-device {
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ── Playlist browser panel ───────────────────── */
+#sp-browse {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: rgba(13, 13, 13, 0.96);
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-browse-hdr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 64px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sp-browse-hdr-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sp-browse-hdr-btn:active { color: var(--text); }
+
+.sp-browse-hdr-btn svg {
+  width: 36px;
+  height: 36px;
+  fill: currentColor;
+  display: block;
+}
+
+#sp-browse-title {
+  flex: 1;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#sp-browse-body {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  position: relative;
+}
+
+/* Playlist grid — horizontal scroll */
+.sp-pl-list {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  padding: 12px 16px;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.sp-pl-list::-webkit-scrollbar { display: none; }
+
+.sp-pl-card {
+  flex-shrink: 0;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  align-self: flex-start;
+}
+
+.sp-pl-card:active {
+  background: #222;
+  border-color: #444;
+}
+
+.sp-pl-art {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--c-track);
+  display: block;
+}
+
+.sp-pl-art-ph {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: var(--c-track);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+
+.sp-pl-art-ph svg { width: 56px; height: 56px; fill: currentColor; }
+
+.sp-pl-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sp-pl-count { display: none; }
+
+/* Browse loading / error message */
+.sp-browse-msg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 40px;
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.sp-play-pl-btn {
+  display: block;
+  margin: 20px auto 0;
+  padding: 14px 40px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-green);
+  background: none;
+  border: 2px solid var(--c-green);
+  border-radius: 6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sp-play-pl-btn:active { opacity: 0.7; }
+
+/* Track list — vertical scroll */
+.sp-tr-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  touch-action: pan-y;
+}
+
+.sp-tr-list::-webkit-scrollbar { display: none; }
+
+.sp-tr-row {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  height: 68px;
+  gap: 14px;
+  flex-shrink: 0;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sp-tr-row:active { background: var(--surface); }
+
+.sp-tr-num {
+  width: 40px;
+  font-size: 20px;
+  color: var(--text-dim);
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-tr-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sp-tr-name {
+  font-size: 22px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sp-tr-artist {
+  font-size: 18px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sp-tr-dur {
+  font-size: 18px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* ── Starlink view ────────────────────────────── */
+.starlink-content {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  padding: 8px 12px;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* Left — connection state */
+.sl-state-panel {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.sl-state-text {
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.sl-state--connected { color: var(--c-green); }
+.sl-state--searching { color: var(--c-amber); }
+.sl-state--booting   { color: var(--c-amber); }
+.sl-state--sleeping  { color: var(--text-dim); }
+.sl-state--offline   { color: var(--c-red);   }
+.sl-state--unknown   { color: var(--c-red);   }
+
+.sl-roaming-badge { align-self: flex-start; }
+
+/* Middle — stats grid */
+.sl-stats {
+  flex: 0 0 460px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sl-stats .stat-grid {
+  width: 100%;
+  grid-template-columns: 1fr 1fr;
+  align-content: start;
+}
+
+/* Right — alerts */
+.sl-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.sl-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sl-alert-ok {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--c-green);
+}
+
+.sl-alert-item {
+  font-size: 24px;
+  color: var(--c-amber);
+}
+
+/* ── Weather panel (Victron view) ─────────────── */
+.wx-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 0;
+  min-width: 0;
+}
+
+.wx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wx-location {
+  font-size: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.wx-loading {
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.wx-today {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+}
+
+.wx-text {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wx-icon {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 192px;
+  line-height: 1;
+}
+
+.wx-temp {
+  font-size: 64px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.wx-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wx-desc {
+  font-size: 30px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wx-detail-row {
+  display: flex;
+  gap: 16px;
+  font-size: 20px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* 4-day forecast strip — hidden, today-only display */
+.wx-forecast {
+  display: none;
+}
+
+.wx-day {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.wx-day-name {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.wx-day-icon {
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.wx-day-hi {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-day-lo {
+  font-size: 16px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Placeholder views ────────────────────────── */
+.placeholder-msg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
