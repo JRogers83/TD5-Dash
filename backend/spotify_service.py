@@ -132,6 +132,12 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
                 await asyncio.sleep(0.5)
                 continue
 
+            if r.status_code == 429:
+                retry_after = int(r.headers.get("Retry-After", 10))
+                log.warning("Spotify rate limited — backing off %ds", retry_after)
+                await asyncio.sleep(retry_after)
+                continue
+
             if r.status_code != 200:
                 log.warning("Spotify poll unexpected status: %d", r.status_code)
                 await asyncio.sleep(_IDLE_INTERVAL)
