@@ -103,20 +103,38 @@ def td5_seed_to_key(seed: int) -> int:
     """
     Derive the KWP2000 security access key from the ECU-supplied seed.
 
-    The TD5 ECU uses an LFSR (linear feedback shift register) with a
-    proprietary polynomial. The 16-bit seed is received from the ECU during
-    the SecurityAccess handshake; this function returns the matching key.
+    The TD5 uses a variable-iteration LFSR — NOT a fixed-polynomial Galois LFSR.
+    The iteration count (1–16) is derived from four specific bits of the seed itself.
 
-    Reference: github.com/pajacobson/td5keygen
+    Verified against two independent primary sources:
+      github.com/pajacobson/td5keygen  (keygen.c / keytool.py)
+      github.com/hairyone/pyTD5Tester  (TD5Tester.py calculate_key())
 
-    !! IMPORTANT — verify the polynomial constant 0x8F1D against the
-       td5keygen source before trusting this implementation. An incorrect
-       key will cause the ECU to reject authentication and may lock the
-       diagnostic session. !!
+    Canonical test vector from td5keygen README: 0x34A5 → 0x54D3
+
+    Algorithm:
+      1. Extract bits 0, 3 (shifted to bit 1), 5 (to bit 2), 12 (to bit 3)
+         of the seed to form a 4-bit iteration count in the range 1–16.
+      2. Each LFSR step: compute tap from bits 1, 2, 8, 9; right-shift by 1
+         with tap fed into bit 15; then force LSB to 0 if bits 3 AND 13 are
+         both set, otherwise force LSB to 1.
     """
-    for _ in range(16):
-        lsb   = seed & 0x0001
-        seed >>= 1
-        if lsb:
-            seed ^= 0x8F1D   # TODO: confirm polynomial against td5keygen
+    seed &= 0xFFFF
+
+    # Iteration count: extract 4 bits from seed, add 1 → range 1–16
+    count = (
+        (seed >> 0xC & 0x8) |
+        (seed >> 0x5 & 0x4) |
+        (seed >> 0x3 & 0x2) |
+        (seed       & 0x1)
+    ) + 1
+
+    for _ in range(count):
+        tap  = ((seed >> 1) ^ (seed >> 2) ^ (seed >> 8) ^ (seed >> 9)) & 1
+        tmp  = (seed >> 1) | (tap << 0xF)
+        if (seed >> 0x3 & 1) and (seed >> 0xD & 1):
+            seed = tmp & 0xFFFE   # force LSB 0
+        else:
+            seed = tmp | 0x0001   # force LSB 1
+
     return seed & 0xFFFF
