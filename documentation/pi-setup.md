@@ -7,14 +7,24 @@ Follow the sections in order — each step depends on the previous one.
 
 ## Hardware Required
 
+**Core (required):**
+
 | Item | Notes |
 |------|-------|
 | Raspberry Pi 5 | 4 GB or 8 GB |
 | Waveshare 7.9" DSI display | 1280×400, connects via ribbon cable to DSI port |
-| microSD card | 16 GB minimum; 32 GB recommended (Class 10 / A1) |
 | USB-C power supply | Official Pi 5 27W PSU recommended |
 | VAG-COM KKL 409.1 cable | Must have genuine FTDI FT232RL chip — clones will not work |
-| Your development machine | To flash the SD card and SSH in for initial setup |
+| Your development machine | To flash storage and SSH in for initial setup |
+
+**Storage — choose one:**
+
+| Option | What you need | Notes |
+|--------|--------------|-------|
+| microSD card | 16 GB minimum, 32 GB recommended, Class 10 / A1 | Simplest to get started |
+| M.2 NVMe SSD + HAT | M.2 HAT for Pi 5, any M.2 NVMe SSD (2230 or 2242 recommended for size) | More durable for in-vehicle use; faster boot; recommended for permanent install |
+
+> **Why SSD for a vehicle install?** microSD cards have a finite write cycle life and are vulnerable to corruption from power loss (e.g. the vehicle being switched off mid-write). An NVMe SSD is significantly more robust for an always-on embedded system.
 
 ---
 
@@ -22,28 +32,92 @@ Follow the sections in order — each step depends on the previous one.
 
 Use **Raspberry Pi Imager** (download from raspberrypi.com/software).
 
-1. Click **Choose OS → Raspberry Pi OS (other) → Raspberry Pi OS Lite (64-bit)**
-   - Lite = no desktop. The kiosk launches Chromium directly from the console.
-2. Click **Choose Storage** → select your SD card
-3. Click the **gear icon** (advanced options) before writing:
-   - Set hostname: `td5dash`
-   - Enable SSH: **Use password authentication**
-   - Set username: `pi` (or your preferred username)
-   - Set password: something you'll remember
-   - Configure WiFi: your home network SSID and password
-4. Click **Write**
+In Imager, click the **gear icon** (advanced options / OS customisation) and configure these settings **before** writing — they are the same regardless of storage:
+
+- Hostname: `td5dash`
+- Enable SSH: **Use password authentication**
+- Username: `pi` (or your preferred username — the setup script adapts to whoever runs it)
+- Password: something you will remember
+- WiFi: your home network SSID and password
+
+Choose **OS → Raspberry Pi OS (other) → Raspberry Pi OS Lite (64-bit)**
+(Lite = no desktop — the kiosk launches Chromium directly from the console.)
+
+---
+
+### 1a. SD card
+
+Select your SD card as the storage target and click **Write**. Skip to [Section 2](#2-first-boot).
+
+---
+
+### 1b. M.2 NVMe SSD
+
+There are two ways to flash the SSD depending on whether you have a USB-to-M.2 adapter.
+
+**Option A — flash directly with a USB adapter (simplest)**
+
+A USB-to-M.2 NVMe adapter costs a few pounds and makes the SSD appear as a USB drive on your computer, so you can flash it exactly like an SD card.
+
+1. Insert the SSD into the USB adapter and connect it to your development machine
+2. In Raspberry Pi Imager, select the SSD as the storage target and click **Write**
+3. Fit the SSD to the M.2 HAT and attach the HAT to the Pi
+4. Continue to [Section 2](#2-first-boot) — after first boot you will need to enable NVMe booting (covered below)
+
+**Option B — bootstrap via SD card (no adapter needed)**
+
+1. Flash Pi OS to an SD card as in [Section 1a](#1a-sd-card) and boot the Pi
+2. Attach the M.2 HAT with SSD to the running Pi
+3. SSH in and flash the SSD from the Pi itself:
+   ```bash
+   # Download and run Pi Imager in server mode, or use dd to clone the SD card:
+   sudo dd if=/dev/mmcblk0 of=/dev/nvme0n1 bs=4M status=progress conv=fsync
+   # Then grow the partition on the SSD to fill the drive:
+   sudo growpart /dev/nvme0n1 2
+   sudo resize2fs /dev/nvme0n1p2
+   ```
+   Alternatively, install `rpi-imager` on the Pi and use its GUI over VNC to write a fresh image to the SSD.
+
+**Enabling NVMe boot (required for both Option A and B)**
+
+The Pi 5 bootloader needs to be told to look for NVMe. SSH in (booted from SD card if using Option B) and run:
+
+```bash
+# Ensure the bootloader is up to date
+sudo apt update && sudo apt full-upgrade -y
+sudo rpi-eeprom-update -a
+sudo reboot
+```
+
+After the reboot, SSH back in and set the boot order:
+
+```bash
+sudo raspi-config
+```
+
+Navigate to **Advanced Options → Boot Order → NVMe/USB Boot** and confirm. This sets NVMe as the first boot device with SD card as fallback — useful if you ever need to recover.
+
+Reboot. The Pi should now boot from the SSD. You can confirm with:
+
+```bash
+findmnt / | grep nvme   # should show /dev/nvme0n1p2 as the root device
+```
+
+Once booting from SSD, the SD card can be removed (or left in as a recovery fallback).
 
 ---
 
 ## 2. First Boot
 
-Insert the SD card, connect the display ribbon cable to the Pi's DSI port, and power on.
+Connect the display ribbon cable to the Pi's DSI port and power on.
 
-Wait about 60 seconds for first-boot setup to complete, then find the Pi's IP address (check your router's DHCP list or use `ping td5dash.local`) and SSH in:
+Wait about 60 seconds for first-boot setup to complete, then SSH in:
 
 ```bash
 ssh pi@td5dash.local
 ```
+
+If `td5dash.local` doesn't resolve, check your router's DHCP client list for the Pi's IP address.
 
 ---
 
