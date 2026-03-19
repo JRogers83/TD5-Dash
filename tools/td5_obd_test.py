@@ -860,6 +860,32 @@ def main() -> None:
 
     _ftdi_url = args.url
 
+    # ── Interactive setup (only when no flags were passed) ────────────────────
+    # If the user just runs `python td5_obd_test.py` with no arguments,
+    # ask three questions instead of requiring them to remember the flags.
+    no_flags_passed = not args.vehicle and not args.verbose and args.log is None \
+                      and args.stage is None and args.url == "ftdi://ftdi:232/1"
+
+    if no_flags_passed:
+        print(f"\n{BOLD}  TD5 OBD Test — Quick Setup{RESET}")
+        print("  ─────────────────────────────────────────")
+
+        ans = input(f"  {CYAN}Are you sitting in the vehicle with ignition on? [y/N]{RESET}  ").strip().lower()
+        args.vehicle = ans in ("y", "yes")
+
+        ans = input(f"  {CYAN}Show verbose output (raw K-Line frame bytes)? [y/N]{RESET}  ").strip().lower()
+        args.verbose = ans in ("y", "yes")
+
+        ans = input(f"  {CYAN}Save a log file for later analysis? [Y/n]{RESET}  ").strip().lower()
+        save_log = ans not in ("n", "no")
+        if save_log:
+            import datetime
+            default_name = f"td5_test_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            typed = input(f"  {CYAN}Log filename [{default_name}]{RESET}  ").strip()
+            args.log = typed if typed else default_name
+
+        print()
+
     # ── Logging and tee setup ─────────────────────────────────────────────────
     if args.log:
         sys.stdout = _Tee(args.log)   # type: ignore[assignment]
