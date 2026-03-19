@@ -19,8 +19,17 @@ USAGE
   # Run all tests (laptop in vehicle, ignition on):
   python td5_obd_test.py --vehicle
 
+  # Show every raw TX/RX frame byte on the K-Line (critical for debugging):
+  python td5_obd_test.py --vehicle --verbose
+
+  # Save everything to a file (terminal + frame bytes) for later analysis:
+  python td5_obd_test.py --vehicle --verbose --log td5_test_run.txt
+
   # Override FTDI URL if you have multiple FTDI devices:
   python td5_obd_test.py --url ftdi://ftdi:232/1
+
+  # Re-run a single stage after a fix (e.g. after adjusting fast-init timing):
+  python td5_obd_test.py --vehicle --stage 8 --verbose
 
 WINDOWS PREREQUISITE
 --------------------
@@ -54,6 +63,7 @@ STAGES
 from __future__ import annotations
 
 import argparse
+import logging
 import struct
 import sys
 import time
@@ -85,6 +95,67 @@ def warn(msg: str) -> None: print(f"  {YELLOW}⚠{RESET}  {msg}")
 def fail(msg: str) -> None: print(f"  {RED}✗{RESET}  {msg}")
 def info(msg: str) -> None: print(f"     {CYAN}{msg}{RESET}")
 def hint(msg: str) -> None: print(f"     {YELLOW}→ {msg}{RESET}")
+
+
+# ── Log/tee support ───────────────────────────────────────────────────────────
+
+class _Tee:
+    """
+    Mirrors everything written to stdout to a log file simultaneously.
+    Assigned to sys.stdout so both print() output and logging StreamHandlers
+    are captured without any changes to the rest of the script.
+    """
+    def __init__(self, path: str) -> None:
+        self._file = open(path, "w", encoding="utf-8", buffering=1)
+
+    def write(self, data: str) -> None:
+        sys.__stdout__.write(data)
+        # Strip ANSI escape sequences for the file
+        import re
+        self._file.write(re.sub(r"\033\[[0-9;]*m", "", data))
+
+    def flush(self) -> None:
+        sys.__stdout__.flush()
+        self._file.flush()
+
+    def fileno(self) -> int:
+        return sys.__stdout__.fileno()
+
+    def close(self) -> None:
+        self._file.close()
+
+
+def _configure_logging(verbose: bool, log_path: Optional[str]) -> None:
+    """
+    Set up Python logging so that raw TX/RX frame bytes from connection.py
+    are visible.  connection.py emits every frame at DEBUG level — without
+    this setup those messages are silently discarded.
+
+    verbose=True : DEBUG level (every TX/RX byte, timing, all detail)
+    verbose=False: INFO level  (session milestones only — less noisy)
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    fmt   = logging.Formatter("  %(name)-20s %(levelname)-7s %(message)s")
+
+    root = logging.getLogger()
+    root.setLevel(level)
+
+    # Console handler — attached to real stdout so it survives Tee assignment
+    ch = logging.StreamHandler(sys.__stdout__)
+    ch.setLevel(level)
+    ch.setFormatter(fmt)
+    root.addHandler(ch)
+
+    if log_path:
+        import re
+        class _StripAnsi(logging.Formatter):
+            def format(self, record: logging.LogRecord) -> str:
+                return re.sub(r"\033\[[0-9;]*m", "", super().format(record))
+
+        fh = logging.FileHandler(log_path, encoding="utf-8")
+        fh.setLevel(level)
+        fh.setFormatter(_StripAnsi("  %(name)-20s %(levelname)-7s %(message)s"))
+        root.addHandler(fh)
 
 
 # ── Result tracking ───────────────────────────────────────────────────────────
@@ -518,7 +589,9 @@ def stage8_fast_init() -> bool:
     import protocol as P
 
     warn("Vehicle required — ensure ignition is ON before proceeding")
-    info("Attempting fast-init (K-Line 25ms LOW pulse) …")
+    info(f"Timing: LOW={P.FAST_INIT_LOW_MS}ms  HIGH={P.FAST_INIT_HIGH_MS}ms  "
+         f"SETTLE={P.SETTLE_MS}ms  BAUD={P.BAUD_RATE}")
+    info("Attempting fast-init …")
 
     try:
         # We do fast-init manually here so we can report each sub-step
@@ -528,14 +601,14 @@ def stage8_fast_init() -> bool:
         ftdi = Ftdi()
         ftdi.open_from_url(_ftdi_url)
 
-        # Bitbang: K-Line LOW for 25ms
+        # Bitbang: K-Line LOW
         ftdi.set_bitmode(TX_PIN, Ftdi.BitMode.BITBANG)
         ftdi.write_data(bytes([0x00]))
-        ok("K-Line LOW pulse started (25ms)")
+        ok(f"K-Line LOW pulse ({P.FAST_INIT_LOW_MS}ms)")
         time.sleep(P.FAST_INIT_LOW_MS / 1000.0)
 
         ftdi.write_data(bytes([TX_PIN]))
-        ok("K-Line HIGH (idle)")
+        ok(f"K-Line HIGH ({P.FAST_INIT_HIGH_MS}ms)")
         time.sleep(P.FAST_INIT_HIGH_MS / 1000.0)
 
         # Return to UART
@@ -543,14 +616,15 @@ def stage8_fast_init() -> bool:
         ftdi.set_baudrate(P.BAUD_RATE)
         ftdi.purge_buffers()
         time.sleep(P.SETTLE_MS / 1000.0)
-        ok("Returned to UART mode")
+        ok("Returned to UART mode — listening for ECU keyword bytes")
 
-        # Try to read keyword bytes — ECU should respond
-        # We read up to 3 bytes with a generous timeout
+        # Read everything the ECU sends until the line goes quiet (1s timeout).
+        # Do NOT cap at 3 bytes — log all bytes received so partial/corrupt
+        # responses can be diagnosed.
         deadline = time.monotonic() + 1.0
         buf = bytearray()
-        while len(buf) < 3 and time.monotonic() < deadline:
-            chunk = ftdi.read_data(3 - len(buf))
+        while time.monotonic() < deadline:
+            chunk = ftdi.read_data(16)
             if chunk:
                 buf.extend(chunk)
             else:
@@ -774,9 +848,22 @@ def main() -> None:
         "--stage", type=int, default=None,
         help="Run a single stage number only (for re-testing after a fix)"
     )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="Enable DEBUG logging — shows every raw TX/RX frame byte on the K-Line"
+    )
+    parser.add_argument(
+        "--log", metavar="FILE", default=None,
+        help="Write all output (print + frame logs) to FILE as well as the terminal"
+    )
     args = parser.parse_args()
 
     _ftdi_url = args.url
+
+    # ── Logging and tee setup ─────────────────────────────────────────────────
+    if args.log:
+        sys.stdout = _Tee(args.log)   # type: ignore[assignment]
+    _configure_logging(verbose=args.verbose, log_path=args.log)
 
     # ── Resolve backend/obd/ path before printing anything ───────────────────
     import os
@@ -809,6 +896,9 @@ def main() -> None:
     print(f"{BOLD}{'═'*62}{RESET}")
     print(f"  FTDI URL : {_ftdi_url}")
     print(f"  Vehicle  : {'YES — stages 8–11 will run' if args.vehicle else 'NO  — stages 8–11 skipped'}")
+    print(f"  Verbose  : {'YES — raw TX/RX frame bytes will be shown' if args.verbose else 'NO  — add --verbose to see frame bytes'}")
+    if args.log:
+        print(f"  Log file : {args.log}")
     if obd_dir:
         print(f"  OBD path : {obd_dir}")
     else:
