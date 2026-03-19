@@ -20,3 +20,6 @@ Thumbs.db
 # Generated Plymouth assets (built by deploy/setup.sh via prepare_logo.py)
 deploy/plymouth/td5-dash/logo.png
 deploy/plymouth/td5-dash/shimmer.png
+
+# OBD test tool log files
+tools/td5_test_*.txt
