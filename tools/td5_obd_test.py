@@ -601,6 +601,11 @@ def stage8_fast_init() -> bool:
         ftdi = Ftdi()
         ftdi.open_from_url(_ftdi_url)
 
+        # Purge BEFORE the init pulse — not after.  Purging after the pulse
+        # risks flushing keyword bytes the ECU sent during the mode-switch.
+        ftdi.purge_buffers()
+        ok("RX buffer purged (before init pulse)")
+
         # Bitbang: K-Line LOW
         ftdi.set_bitmode(TX_PIN, Ftdi.BitMode.BITBANG)
         ftdi.write_data(bytes([0x00]))
@@ -611,10 +616,9 @@ def stage8_fast_init() -> bool:
         ok(f"K-Line HIGH ({P.FAST_INIT_HIGH_MS}ms)")
         time.sleep(P.FAST_INIT_HIGH_MS / 1000.0)
 
-        # Return to UART
+        # Return to UART — do NOT purge here
         ftdi.set_bitmode(0x00, Ftdi.BitMode.RESET)
         ftdi.set_baudrate(P.BAUD_RATE)
-        ftdi.purge_buffers()
         time.sleep(P.SETTLE_MS / 1000.0)
         ok("Returned to UART mode — listening for ECU keyword bytes")
 
