@@ -11,8 +11,9 @@ Primary references:
 """
 
 # ── Node addresses ─────────────────────────────────────────────────────────────
-ECU_ADDR    = 0x10   # Lucas/MEMS ECU node address
-TESTER_ADDR = 0xF1   # External diagnostic tester (us)
+# Confirmed by Ekaitza_Itzali working sequence and DiscoTD5 source.
+ECU_ADDR    = 0x13   # Lucas/MEMS ECU node address
+TESTER_ADDR = 0xF7   # External diagnostic tester (us)
 
 # ── Timing constants (all in milliseconds unless noted) ────────────────────────
 BAUD_RATE          = 10400
@@ -24,11 +25,12 @@ P3_INTER_MSG_MS    = 55    # Min gap between end of response and next request
 P4_INTER_BYTE_MS   = 5     # Gap between bytes sent from tester
 
 # ── KWP2000 service IDs ────────────────────────────────────────────────────────
-SVC_START_DIAG      = 0x10   # StartDiagnosticSession
-SVC_STOP_DIAG       = 0x20   # StopDiagnosticSession
-SVC_ECU_RESET       = 0x11   # ECUReset
-SVC_SECURITY_ACCESS = 0x27   # SecurityAccess (seed-key handshake)
-SVC_READ_LOCAL_ID   = 0x21   # ReadDataByLocalIdentifier (live data)
+SVC_START_COMMUNICATION = 0x81   # StartCommunication — must be first, before StartDiagnosticSession
+SVC_START_DIAG          = 0x10   # StartDiagnosticSession
+SVC_STOP_DIAG           = 0x20   # StopDiagnosticSession
+SVC_ECU_RESET           = 0x11   # ECUReset
+SVC_SECURITY_ACCESS     = 0x27   # SecurityAccess (seed-key handshake)
+SVC_READ_LOCAL_ID       = 0x21   # ReadDataByLocalIdentifier (live data)
 
 # Positive response = service_id | 0x40
 POSITIVE_RESPONSE_OFFSET = 0x40
@@ -72,29 +74,42 @@ PID_THROTTLE = 0x1B
 # ── Frame helpers ──────────────────────────────────────────────────────────────
 
 def checksum(data: bytes) -> int:
-    """8-bit additive checksum: sum of all bytes modulo 256."""
+    """8-bit additive checksum: sum of all bytes modulo 256.
+    Retained for reference / testing; not used in TD5 short-format frames."""
     return sum(data) & 0xFF
 
 
 def build_frame(service: int, *payload: int) -> bytes:
     """
-    Build a KWP2000 physical-addressing frame for the TD5.
+    Build a KWP2000 short-format request frame for the TD5.
 
-    Structure:
-        [0x80]  header byte — KWP2000 physical addressing, length in next byte
-        [len]   number of bytes that follow (excl. header and checksum)
-        [ECU]   target address
-        [TST]   source address (tester)
+    Confirmed working format (Ekaitza_Itzali / DiscoTD5):
+
+        [LEN]   number of data bytes that follow  (= 1 + len(payload))
         [svc]   service ID
         [...]   optional payload bytes
-        [csum]  additive checksum of all preceding bytes
 
-    Note: some TD5 implementations use a different header byte (0xC1 for
-    functional addressing). If the ECU does not respond, try 0xC1 here.
+    No address bytes, no header byte 0x80, no checksum.
+    This format is used for all services AFTER StartCommunication has
+    established the session — see build_start_comm() for the exception.
     """
-    body  = bytes([ECU_ADDR, TESTER_ADDR, service] + list(payload))
-    frame = bytes([0x80, len(body)]) + body
-    return frame + bytes([checksum(frame)])
+    data = bytes([service] + list(payload))
+    return bytes([len(data)]) + data
+
+
+def build_start_comm() -> bytes:
+    """
+    Build the StartCommunication frame.
+
+    This is the only frame that uses physical addressing (address bytes
+    present).  Confirmed bytes from Ekaitza_Itzali: 81 13 F7 81.
+
+        [0x81]  format byte — bit 7 set (address bytes present), length = 1
+        [ECU]   target address (0x13)
+        [TST]   source address (0xF7)
+        [0x81]  StartCommunication service ID
+    """
+    return bytes([0x81, ECU_ADDR, TESTER_ADDR, SVC_START_COMMUNICATION])
 
 
 # ── Seed-key algorithm ─────────────────────────────────────────────────────────

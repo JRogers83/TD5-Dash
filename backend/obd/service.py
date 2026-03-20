@@ -56,11 +56,10 @@ class TD5Session:
         """
         KWP2000 service 0x10 — StartDiagnosticSession.
 
-        Sub-function 0x89 selects the ECU's extended diagnostic mode which
-        enables live data access. Verify sub-function against pyTD5Tester if
-        the ECU rejects the request.
+        Sub-function 0xA0 confirmed by Ekaitza_Itzali working sequence.
+        Frame sent: 02 10 A0  →  ECU replies: 01 50
         """
-        frame = P.build_frame(P.SVC_START_DIAG, 0x89)
+        frame = P.build_frame(P.SVC_START_DIAG, 0xA0)
         self._conn.send(frame)
         resp = self._conn.recv_frame()
         self._assert_positive(resp, P.SVC_START_DIAG, "StartDiagnosticSession")
@@ -84,9 +83,9 @@ class TD5Session:
         resp = self._conn.recv_frame()
         self._assert_positive(resp, P.SVC_SECURITY_ACCESS, "SecurityAccess/seed")
 
-        # Seed is the two bytes immediately after [svc_response, subfunction]
-        # Frame layout: [0x80][len][ECU][TST][0x67][0x01][seed_hi][seed_lo][csum]
-        seed = (resp[6] << 8) | resp[7]
+        # Short-format response: [FMT=0x04][0x67][0x01][seed_hi][seed_lo]
+        # frame[3] = seed_hi, frame[4] = seed_lo
+        seed = (resp[3] << 8) | resp[4]
         log.debug("ECU seed: 0x%04X", seed)
 
         # Step 2 — compute key
@@ -120,15 +119,16 @@ class TD5Session:
         self._conn.send(P.build_frame(P.SVC_READ_LOCAL_ID, pid))
         resp = self._conn.recv_frame()
         self._assert_positive(resp, P.SVC_READ_LOCAL_ID, f"ReadDataByLocalIdentifier(0x{pid:02X})")
-        # Strip: [0x80][len][ECU_addr][TST_addr][svc_response][pid_echo] = 6 bytes
-        # Last byte (checksum) already validated by recv_frame
-        return resp[6:-1]
+        # Short-format response: [FMT][0x61][pid_echo][payload…]
+        # Strip FMT + service response byte + pid echo = first 3 bytes
+        return resp[3:]
 
     @staticmethod
     def _assert_positive(frame: bytes, service: int, name: str) -> None:
+        # Short-format frame: [FMT][SVC][data…] — service byte is at index 1
         expected = service + P.POSITIVE_RESPONSE_OFFSET
-        if len(frame) < 5 or frame[4] != expected:
-            actual = frame[4] if len(frame) >= 5 else 0xFF
+        if len(frame) < 2 or frame[1] != expected:
+            actual = frame[1] if len(frame) >= 2 else 0xFF
             raise KLineError(
                 f"{name}: expected positive response 0x{expected:02X}, "
                 f"got 0x{actual:02X} — full frame: {frame.hex(' ')}"

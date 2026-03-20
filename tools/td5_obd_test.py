@@ -172,6 +172,14 @@ class StageResult:
 results: List[StageResult] = []
 _ftdi_url: str = "ftdi://ftdi:232/1"
 
+# Set by Stage 8 if a working timing is found; Stages 9-11 use this to skip
+# re-testing and so the log contains the confirmed timing.
+_working_low_ms: Optional[int] = None
+
+# LOW pulse durations to try, in order.  25 ms is the ISO 9141-2 nominal value;
+# the bracketing values cover the tolerance range observed across TD5 ECUs.
+_TIMING_CANDIDATES = [25, 23, 27, 21, 29, 19, 31]
+
 
 def run_stage(
     number: int,
@@ -378,23 +386,38 @@ def stage6_protocol() -> bool:
 
     # ── Checksum ──────────────────────────────────────────────────────────────
     # Manual: 0x80+0x04+0x10+0xF1+0x10+0x89 = 0x11E → mod 256 = 0x1E
-    from protocol import checksum, build_frame, SVC_START_DIAG, td5_seed_to_key
+    from protocol import checksum, build_frame, build_start_comm, SVC_START_DIAG, td5_seed_to_key
 
+    # ── Checksum function ─────────────────────────────────────────────────────
+    # The checksum() function is retained for reference.  The confirmed TD5
+    # short-format protocol does not include checksums in frames — this test
+    # just verifies the function itself is arithmetically correct.
     data  = bytes([0x80, 0x04, 0x10, 0xF1, 0x10, 0x89])
     csum  = checksum(data)
     if csum == 0x1E:
-        ok(f"Checksum correct: 0x{csum:02X}")
+        ok(f"Checksum function correct: 0x{csum:02X}  (note: not used in short-format frames)")
     else:
-        fail(f"Checksum wrong: got 0x{csum:02X}, expected 0x1E")
+        fail(f"Checksum function wrong: got 0x{csum:02X}, expected 0x1E")
         passed = False
 
-    # ── Frame build ───────────────────────────────────────────────────────────
-    frame = build_frame(SVC_START_DIAG, 0x89)
-    expected_body = bytes([0x80, 0x04, 0x10, 0xF1, 0x10, 0x89, 0x1E])
-    if frame == expected_body:
-        ok(f"Frame build correct: {frame.hex(' ')}")
+    # ── StartCommunication frame ───────────────────────────────────────────────
+    # Confirmed bytes from Ekaitza_Itzali: 81 13 F7 81
+    comm = build_start_comm()
+    expected_comm = bytes([0x81, 0x13, 0xF7, 0x81])
+    if comm == expected_comm:
+        ok(f"StartCommunication frame correct: {comm.hex(' ')}")
     else:
-        fail(f"Frame build wrong: {frame.hex(' ')} (expected {expected_body.hex(' ')})")
+        fail(f"StartCommunication frame wrong: {comm.hex(' ')} (expected {expected_comm.hex(' ')})")
+        passed = False
+
+    # ── StartDiagnosticSession frame ──────────────────────────────────────────
+    # Confirmed bytes from Ekaitza_Itzali: 02 10 A0  (sub-fn 0xA0, no address bytes)
+    frame = build_frame(SVC_START_DIAG, 0xA0)
+    expected_diag = bytes([0x02, 0x10, 0xA0])
+    if frame == expected_diag:
+        ok(f"StartDiagnosticSession frame correct: {frame.hex(' ')}")
+    else:
+        fail(f"StartDiagnosticSession frame wrong: {frame.hex(' ')} (expected {expected_diag.hex(' ')})")
         passed = False
 
     # ── Seed-key algorithm ────────────────────────────────────────────────────
@@ -576,88 +599,224 @@ def stage7_decoders() -> bool:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STAGE 8 — Fast-init (vehicle required — ignition ON, engine optional)
+# STAGE 8 — Fast-init + first session contact (vehicle required)
 # ═════════════════════════════════════════════════════════════════════════════
+#
+# Design notes:
+#   KWP2000 fast-init does NOT require the ECU to volunteer keyword bytes after
+#   the wake pulse — the ECU is completely silent until it receives a valid
+#   request.  Previous versions of this stage waited for keyword bytes and
+#   therefore always appeared to fail even when the K-Line was working.
+#
+#   This version:
+#     1. Passive-listens for 1 s to confirm the line is quiet.
+#     2. Tries each LOW-pulse timing in _TIMING_CANDIDATES, sending a full
+#        StartDiagnosticSession request after each pulse, and waits for the
+#        ECU to return a KWP2000 positive response (service byte 0x50).
+#     3. Passes as soon as one timing elicits a positive response; records
+#        the working LOW_MS so Stages 9–11 can report it.
+#     4. If no timing works, prints per-attempt detail to aid diagnosis.
 
-def stage8_fast_init() -> bool:
+
+
+def _read_bus(ftdi, timeout_s: float = 0.5) -> bytes:
+    """Read all available bytes from the FTDI device until the line goes quiet."""
+    buf      = bytearray()
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        chunk = ftdi.read_data(32)
+        if chunk:
+            buf.extend(chunk)
+        else:
+            time.sleep(0.01)
+    return bytes(buf)
+
+
+def _strip_echo(raw: bytes, sent: bytes) -> bytes:
+    """Remove the TX echo of sent_frame from the start of raw."""
+    if raw[:len(sent)] == sent:
+        return raw[len(sent):]
+    return raw
+
+
+def _find_response(data: bytes, expected_svc: int):
     """
-    Drives the K-Line wake pulse and waits for the ECU to acknowledge with
-    keyword bytes. This is the first stage that requires the car.
+    Scan data for a KWP2000 short-format ECU response containing expected_svc.
 
-    Ignition ON, engine does not need to be running.
+    Confirmed short-format: [FMT][SVC][data…]
+      FMT bit 7 = 0: no address bytes; bits 6-0 = data byte count
+      SVC is at index [i+1]
+
+    Returns the frame bytes starting at the match, or None.
+    """
+    for i in range(len(data) - 1):
+        fmt = data[i]
+        if fmt & 0x80:
+            continue   # skip address-bearing frames (not expected in ECU responses)
+        svc = data[i + 1]
+        if svc == expected_svc or svc == 0x7F:
+            return data[i:]
+    return None
+
+
+def _do_init_attempt(ftdi, low_ms: int) -> dict:
+    """
+    One complete fast-init attempt using the confirmed Ekaitza_Itzali sequence:
+      pulse → StartCommunication (81 13 F7 81) → StartDiagnosticSession (02 10 A0)
+
+    Returns a dict with keys:
+      level   0 = no ECU response to StartCommunication
+              1 = StartCommunication accepted (0xC1) but StartDiag failed/silent
+              2 = full session established (StartDiag positive 0x50)
+      comm_raw, diag_raw — hex strings of stripped (echo-removed) received bytes
     """
     import protocol as P
+    from pyftdi.ftdi import Ftdi  # type: ignore
+
+    TX_PIN = 0x01
+
+    # Purge BEFORE the pulse (start with clean RX buffer)
+    ftdi.purge_buffers()
+
+    # Fast-init wake pulse
+    ftdi.set_bitmode(TX_PIN, Ftdi.BitMode.BITBANG)
+    ftdi.write_data(bytes([0x00]))
+    time.sleep(low_ms / 1000.0)
+    ftdi.write_data(bytes([TX_PIN]))
+    time.sleep(P.FAST_INIT_HIGH_MS / 1000.0)
+
+    # Return to UART then purge pulse artifacts.
+    # The ECU is silent after fast-init until it receives StartCommunication,
+    # so purging here does not risk losing genuine ECU data.
+    ftdi.set_bitmode(0x00, Ftdi.BitMode.RESET)
+    ftdi.set_baudrate(P.BAUD_RATE)
+    time.sleep(P.SETTLE_MS / 1000.0)
+    ftdi.purge_buffers()
+
+    # ── Step 1: StartCommunication (81 13 F7 81) ───────────────────────────────
+    comm_frame = P.build_start_comm()
+    for byte in comm_frame:
+        ftdi.write_data(bytes([byte]))
+        time.sleep(P.P4_INTER_BYTE_MS / 1000.0)
+
+    comm_raw     = _read_bus(ftdi, timeout_s=0.5)
+    comm_stripped = _strip_echo(comm_raw, comm_frame)
+    comm_resp    = _find_response(comm_stripped, P.SVC_START_COMMUNICATION + 0x40)  # 0xC1
+    comm_hex     = comm_stripped.hex(' ') if comm_stripped else ''
+
+    if comm_resp is None or comm_resp[1] == 0x7F:
+        return {'level': 0, 'comm_raw': comm_hex, 'diag_raw': ''}
+
+    # ── Step 2: StartDiagnosticSession (02 10 A0) ──────────────────────────────
+    diag_frame = P.build_frame(P.SVC_START_DIAG, 0xA0)
+    for byte in diag_frame:
+        ftdi.write_data(bytes([byte]))
+        time.sleep(P.P4_INTER_BYTE_MS / 1000.0)
+
+    diag_raw     = _read_bus(ftdi, timeout_s=0.5)
+    diag_stripped = _strip_echo(diag_raw, diag_frame)
+    diag_resp    = _find_response(diag_stripped, P.SVC_START_DIAG + 0x40)  # 0x50
+    diag_hex     = diag_stripped.hex(' ') if diag_stripped else ''
+
+    if diag_resp is not None and diag_resp[1] == 0x50:
+        return {'level': 2, 'comm_raw': comm_hex, 'diag_raw': diag_hex}
+
+    return {'level': 1, 'comm_raw': comm_hex, 'diag_raw': diag_hex}
+
+
+def stage8_fast_init() -> bool:
+    global _working_low_ms
+
+    import protocol as P
+    from pyftdi.ftdi import Ftdi  # type: ignore
 
     warn("Vehicle required — ensure ignition is ON before proceeding")
-    info(f"Timing: LOW={P.FAST_INIT_LOW_MS}ms  HIGH={P.FAST_INIT_HIGH_MS}ms  "
-         f"SETTLE={P.SETTLE_MS}ms  BAUD={P.BAUD_RATE}")
-    info("Attempting fast-init …")
+    TX_PIN = 0x01
 
+    # ── Passive listen ─────────────────────────────────────────────────────────
+    info("Step 1/2  Passive listen (1 s) — K-Line should be quiet before init")
     try:
-        # We do fast-init manually here so we can report each sub-step
-        from pyftdi.ftdi import Ftdi  # type: ignore
-
-        TX_PIN = 0x01
         ftdi = Ftdi()
         ftdi.open_from_url(_ftdi_url)
-
-        # Purge BEFORE the init pulse — not after.  Purging after the pulse
-        # risks flushing keyword bytes the ECU sent during the mode-switch.
-        ftdi.purge_buffers()
-        ok("RX buffer purged (before init pulse)")
-
-        # Bitbang: K-Line LOW
-        ftdi.set_bitmode(TX_PIN, Ftdi.BitMode.BITBANG)
-        ftdi.write_data(bytes([0x00]))
-        ok(f"K-Line LOW pulse ({P.FAST_INIT_LOW_MS}ms)")
-        time.sleep(P.FAST_INIT_LOW_MS / 1000.0)
-
-        ftdi.write_data(bytes([TX_PIN]))
-        ok(f"K-Line HIGH ({P.FAST_INIT_HIGH_MS}ms)")
-        time.sleep(P.FAST_INIT_HIGH_MS / 1000.0)
-
-        # Return to UART — do NOT purge here
-        ftdi.set_bitmode(0x00, Ftdi.BitMode.RESET)
         ftdi.set_baudrate(P.BAUD_RATE)
-        time.sleep(P.SETTLE_MS / 1000.0)
-        ok("Returned to UART mode — listening for ECU keyword bytes")
-
-        # Read everything the ECU sends until the line goes quiet (1s timeout).
-        # Do NOT cap at 3 bytes — log all bytes received so partial/corrupt
-        # responses can be diagnosed.
-        deadline = time.monotonic() + 1.0
-        buf = bytearray()
-        while time.monotonic() < deadline:
-            chunk = ftdi.read_data(16)
-            if chunk:
-                buf.extend(chunk)
-            else:
-                time.sleep(0.01)
-
+        ftdi.purge_buffers()
+        noise = _read_bus(ftdi, timeout_s=1.0)
         ftdi.close()
-
-        if len(buf) > 0:
-            ok(f"ECU responded with {len(buf)} byte(s) after fast-init: {buf.hex(' ')}")
-            # TD5 keyword bytes confirmed by pyTD5Tester and Ekaitza_Itzali
-            if len(buf) >= 2 and buf[0] == 0xC1 and buf[1] == 0x57:
-                ok("Keyword bytes 0xC1 0x57 confirmed — genuine TD5 ECU response")
-            elif len(buf) >= 1:
-                warn(f"Unexpected keyword bytes: {buf.hex(' ')} (expected C1 57)")
-                hint("ECU is alive but keyword bytes differ from expected — may still work")
-            return True
+        if noise:
+            warn(f"Unexpected bus activity before init: {noise.hex(' ')}")
+            hint("Another device may be active on the K-Line bus")
         else:
-            warn("No bytes received after fast-init — ECU did not respond")
-            hint("Is ignition definitely ON?")
-            hint("Is the KKL cable seated fully in the OBD-II port?")
-            hint("TD5 OBD-II port: behind the centre cubby, driver's side")
-            hint("Try adjusting FAST_INIT_LOW_MS in protocol.py by ±2ms")
-            hint("Some TD5 ECUs are sensitive to init pulse timing")
-            return False
-
+            ok("K-Line quiet — ready to send wake pulse")
     except Exception as exc:
-        fail(f"Fast-init failed: {exc}")
-        hint("Check the KKL cable is plugged into both the PC USB port and the vehicle OBD port")
+        fail(f"Passive listen failed: {exc}")
         return False
+
+    # ── Timing sweep ───────────────────────────────────────────────────────────
+    # Confirmed sequence (Ekaitza_Itzali):
+    #   fast-init → StartCommunication (81 13 F7 81) → StartDiagnosticSession (02 10 A0)
+    # ECU addr 0x13, tester addr 0xF7, sub-function 0xA0 — all baked into protocol.py
+    info(f"Step 2/2  Confirmed sequence (Ekaitza_Itzali):")
+    info(f"          fast-init → StartCommunication 81 13 F7 81 → StartDiagSession 02 10 A0")
+    info(f"          LOW timings to try: {_TIMING_CANDIDATES} ms  "
+         f"HIGH={P.FAST_INIT_HIGH_MS}ms  SETTLE={P.SETTLE_MS}ms")
+    print()
+    info(f"  {'LOW':>5}  {'StartComm (0xC1)':>18}  {'StartDiag (0x50)':>18}")
+
+    for low_ms in _TIMING_CANDIDATES:
+        try:
+            ftdi = Ftdi()
+            ftdi.open_from_url(_ftdi_url)
+
+            result = _do_init_attempt(ftdi, low_ms)
+
+            ftdi.close()
+
+            level    = result['level']
+            comm_str = result['comm_raw'][:25]
+            diag_str = result['diag_raw'][:25]
+
+            if level == 2:
+                comm_lbl = f"{GREEN}✓ 0xC1{RESET}"
+                diag_lbl = f"{GREEN}✓ 0x50{RESET}"
+            elif level == 1:
+                comm_lbl = f"{GREEN}✓ 0xC1{RESET}"
+                diag_lbl = f"{YELLOW}✗ {diag_str or 'silent'}{RESET}"
+            else:
+                comm_lbl = f"  {comm_str or 'silent'}"
+                diag_lbl = "  —"
+
+            info(f"  {low_ms:>5}ms  {comm_lbl:>18}  {diag_lbl:>18}")
+
+            if level == 2:
+                _working_low_ms = low_ms
+                print()
+                ok(f"Full session established — LOW pulse = {low_ms} ms")
+                if low_ms != P.FAST_INIT_LOW_MS:
+                    warn(f"Working LOW timing ({low_ms}ms) differs from "
+                         f"protocol.py FAST_INIT_LOW_MS ({P.FAST_INIT_LOW_MS}ms)")
+                    hint(f"Update FAST_INIT_LOW_MS = {low_ms} in backend/obd/protocol.py")
+                return True
+
+            if low_ms != _TIMING_CANDIDATES[-1]:
+                time.sleep(1.0)
+
+        except Exception as exc:
+            info(f"  {low_ms:>5}ms  exception: {exc}")
+            try:
+                ftdi.close()
+            except Exception:
+                pass
+            time.sleep(1.0)
+
+    print()
+    fail("No timing produced a full session")
+    hint("Is ignition definitely ON?  KKL cable fully seated in OBD-II port?")
+    hint("TD5 OBD-II port: behind the centre cubby, driver's side")
+    hint("Look at the table above for partial results:")
+    hint("  StartComm ✓ but StartDiag silent → unexpected — sub-fn should be 0xA0 per Ekaitza_Itzali")
+    hint("  All silent → ECU not responding to StartCommunication at any timing")
+    hint("  No response at all → check USB cable and Zadig driver")
+    return False
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -689,41 +848,98 @@ def stage9_diag_session() -> bool:
 def stage10_auth() -> bool:
     from connection import KLineConnection, KLineError
     from service import TD5Session
+    import protocol as P
 
-    try:
+    def _try_auth(swap_seed_bytes: bool) -> tuple[bool, int, int]:
+        """
+        Attempt a full auth sequence on a fresh connection.
+
+        swap_seed_bytes=False: big-endian  resp[3]=hi, resp[4]=lo  (standard)
+        swap_seed_bytes=True:  little-endian resp[4]=hi, resp[3]=lo  (alternative)
+
+        Returns (success, seed_as_interpreted, key_sent).
+        Raises KLineError on comms failure; returns (False, seed, key) on ECU rejection.
+        """
         with KLineConnection(_ftdi_url) as conn:
             session = TD5Session(conn)
             session._start_diagnostic_session()
 
-            # Manually step through auth so we can log the seed
-            import protocol as P
             conn.send(P.build_frame(P.SVC_SECURITY_ACCESS, P.SA_REQUEST_SEED))
             resp = conn.recv_frame()
             session._assert_positive(resp, P.SVC_SECURITY_ACCESS, "seed request")
 
-            seed = (resp[6] << 8) | resp[7]
-            key  = P.td5_seed_to_key(seed)
-            info(f"ECU seed: 0x{seed:04X}")
-            info(f"Computed key: 0x{key:04X}")
+            # Short-format response: [FMT][0x67][0x01][byte_a][byte_b]
+            byte_a, byte_b = resp[3], resp[4]
+            if swap_seed_bytes:
+                seed = (byte_b << 8) | byte_a   # little-endian: lo byte first in frame
+            else:
+                seed = (byte_a << 8) | byte_b   # big-endian: hi byte first in frame
+
+            key = P.td5_seed_to_key(seed)
+
+            if swap_seed_bytes:
+                # Send key in matching little-endian order
+                key_lo, key_hi = key & 0xFF, (key >> 8) & 0xFF
+            else:
+                key_hi, key_lo = (key >> 8) & 0xFF, key & 0xFF
 
             key_frame = P.build_frame(
-                P.SVC_SECURITY_ACCESS, P.SA_SEND_KEY,
-                (key >> 8) & 0xFF, key & 0xFF,
+                P.SVC_SECURITY_ACCESS, P.SA_SEND_KEY, key_hi, key_lo,
             )
             conn.send(key_frame)
             resp = conn.recv_frame()
-            session._assert_positive(resp, P.SVC_SECURITY_ACCESS, "key response")
 
-            ok("Seed-key authentication accepted by ECU")
-            info(f"Seed 0x{seed:04X} → Key 0x{key:04X} — note these for td5keygen cross-check")
-            return True
+            # Check positive response without raising — we want to detect rejection cleanly
+            expected = P.SVC_SECURITY_ACCESS + P.POSITIVE_RESPONSE_OFFSET
+            if len(resp) < 2 or resp[1] != expected:
+                return False, seed, key
 
-    except Exception as exc:
-        fail(f"Authentication failed: {exc}")
-        hint("Most likely cause: incorrect polynomial in protocol.td5_seed_to_key()")
-        hint("Cross-check with: github.com/pajacobson/td5keygen")
-        hint("Also check: seed bytes at resp[6:8] — are they plausible non-zero values?")
+            return True, seed, key
+
+    # ── Attempt 1: big-endian (standard interpretation) ───────────────────────
+    order_label = "big-endian (hi byte first)"
+    try:
+        success, seed, key = _try_auth(swap_seed_bytes=False)
+    except KLineError as exc:
+        fail(f"Authentication (attempt 1, {order_label}): comms error — {exc}")
+        hint("K-Line comms failed before key exchange; check fast-init and session setup")
         return False
+
+    if success:
+        ok(f"Seed-key authentication accepted by ECU ({order_label})")
+        info(f"Seed 0x{seed:04X} → Key 0x{key:04X}")
+        info("service.py seed extraction is correct as-is (big-endian)")
+        return True
+
+    # ── Attempt 2: little-endian (byte order swapped) ─────────────────────────
+    warn(f"ECU rejected key with {order_label} — retrying with little-endian (lo byte first)")
+    info("Opening a fresh K-Line connection for retry (ECU requires re-init after failed key)")
+
+    order_label = "little-endian (lo byte first)"
+    try:
+        success, seed, key = _try_auth(swap_seed_bytes=True)
+    except KLineError as exc:
+        fail(f"Authentication (attempt 2, {order_label}): comms error — {exc}")
+        return False
+
+    if success:
+        ok(f"Seed-key authentication accepted by ECU ({order_label})")
+        info(f"Seed 0x{seed:04X} → Key 0x{key:04X}")
+        warn("service.py needs updating — seed bytes are little-endian in the ECU frame:")
+        hint("In service.py _authenticate(), change:")
+        hint("  seed = (resp[3] << 8) | resp[4]")
+        hint("to:")
+        hint("  seed = (resp[4] << 8) | resp[3]")
+        hint("And change key send order from (key_hi, key_lo) to (key_lo, key_hi)")
+        return True
+
+    fail("ECU rejected the key with both byte orders")
+    hint("Possible causes:")
+    hint("  1. Wrong polynomial in td5_seed_to_key() — cross-check with td5keygen")
+    hint("     git clone github.com/pajacobson/td5keygen && python keytool.py <seed_hex>")
+    hint("  2. ECU is in a locked state — cycle ignition and wait 10 s before retrying")
+    hint("  3. Frame bytes resp[3] and resp[4] are not the seed — check raw frame with --verbose")
+    return False
 
 
 # ═════════════════════════════════════════════════════════════════════════════

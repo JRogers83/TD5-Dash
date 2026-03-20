@@ -62,7 +62,8 @@ class KLineConnection:
         self._ftdi = Ftdi()
         self._ftdi.open_from_url(self._url)
         self._fast_init()
-        log.info("Fast-init complete — K-Line ready at %d baud", P.BAUD_RATE)
+        self._start_communication()
+        log.info("K-Line initialised — ready at %d baud", P.BAUD_RATE)
 
     def close(self) -> None:
         if self._ftdi:
@@ -99,6 +100,10 @@ class KLineConnection:
 
         TX_PIN = 0x01   # TX is bit 0 in the FT232 GPIO map
 
+        # Purge RX buffer BEFORE the pulse.  Purging after the mode-switch risks
+        # flushing keyword bytes the ECU sent during the brief UART→bitbang window.
+        self._ftdi.purge_buffers()
+
         # Switch to bitbang mode — TX pin becomes a manually-driven GPIO output
         self._ftdi.set_bitmode(TX_PIN, Ftdi.BitMode.BITBANG)
 
@@ -111,14 +116,68 @@ class KLineConnection:
         # Return to normal UART mode
         self._ftdi.set_bitmode(0x00, Ftdi.BitMode.RESET)
         self._ftdi.set_baudrate(P.BAUD_RATE)
-        self._ftdi.purge_buffers()
         time.sleep(P.SETTLE_MS / 1000.0)
+
+        # Purge fast-init pulse artifacts.  The bitbang LOW→HIGH transitions
+        # are decoded by the FTDI UART as spurious bytes (0xC0, 0xCC, 0xFC).
+        # In KWP2000, the ECU is completely silent after the wake pulse and
+        # will not transmit anything until it receives StartCommunication, so
+        # purging here does not risk discarding genuine ECU data.
+        self._ftdi.purge_buffers()
+
+    # ── StartCommunication ─────────────────────────────────────────────────────
+
+    def _start_communication(self) -> None:
+        """
+        Send StartCommunication (SID 0x81) and verify the ECU responds.
+
+        Uses the physical-addressing short format (see build_start_comm()).
+        Confirmed frame: 81 13 F7 81 → ECU replies 03 C1 57 8F.
+
+        This must be the first KWP2000 service after the fast-init wake pulse.
+        The ECU is silent until it receives this greeting.
+        """
+        frame    = P.build_start_comm()
+        expected = P.SVC_START_COMMUNICATION + P.POSITIVE_RESPONSE_OFFSET   # 0xC1
+        self.send(frame)
+        resp = self.recv_frame()
+        # Response is short-format with no address bytes: [FMT][SVC][data…]
+        # frame[1] is the service byte (0xC1 = StartCommunication positive)
+        if len(resp) < 2 or resp[1] != expected:
+            actual = resp[1] if len(resp) >= 2 else 0xFF
+            raise KLineError(
+                f"StartCommunication failed: expected 0x{expected:02X}, "
+                f"got 0x{actual:02X} — frame: {resp.hex(' ')}"
+            )
+        log.info("StartCommunication accepted — keyword bytes: %s", resp[2:].hex(' '))
 
     # ── Frame I/O ──────────────────────────────────────────────────────────────
 
+    def _consume_echo(self, frame: bytes) -> None:
+        """
+        Read and discard the TX echo.
+
+        K-Line is a half-duplex single-wire bus — every byte we transmit is
+        immediately reflected back on RX.  This must be called right after the
+        last byte of a frame is sent so that the subsequent recv_frame() call
+        sees only the ECU's reply and not our own transmission.
+        """
+        needed   = len(frame)
+        deadline = time.monotonic() + 0.1   # 100 ms is ample at 10,400 baud
+        while needed > 0 and time.monotonic() < deadline:
+            chunk = self._ftdi.read_data(needed)
+            if chunk:
+                log.debug("Echo consumed: %s", chunk.hex(' '))
+                needed -= len(chunk)
+            else:
+                time.sleep(0.002)
+        if needed > 0:
+            log.warning("TX echo drain: expected %d more bytes — proceeding anyway", needed)
+
     def send(self, frame: bytes) -> None:
         """
-        Write a KWP2000 frame byte-by-byte with inter-byte timing.
+        Write a KWP2000 frame byte-by-byte with inter-byte timing, then
+        consume the TX echo so recv_frame() sees only the ECU's reply.
 
         The inter-byte delay (P4) gives the ECU's UART enough time to
         process each byte before the next arrives.
@@ -127,6 +186,7 @@ class KLineConnection:
         for byte in frame:
             self._ftdi.write_data(bytes([byte]))
             time.sleep(P.P4_INTER_BYTE_MS / 1000.0)
+        self._consume_echo(frame)
 
     def recv(self, length: int, timeout_s: float = 0.5) -> bytes:
         """
@@ -152,32 +212,32 @@ class KLineConnection:
 
     def recv_frame(self, timeout_s: float = 1.0) -> bytes:
         """
-        Read a complete KWP2000 frame, using the length byte to know when to stop.
+        Read a KWP2000 short-format frame from the ECU.
 
-        Frame structure:
-            [0x80] [len] [tgt_addr] [src_addr] [service] [...data...] [checksum]
-             ^^^^^^^^^^^^
-             2-byte header — len tells us how many bytes follow
+        Confirmed frame structure (Ekaitza_Itzali / DiscoTD5):
 
-        Returns the full raw frame including header and checksum.
-        Raises KLineError if the checksum does not match.
+            [FMT]            format/length byte
+                               bit 7 = 1: TADDR + SADDR bytes follow
+                               bit 7 = 0: no address bytes (most ECU responses)
+                               bits 6-0:  number of data bytes that follow
+            [TADDR]          (only if bit 7 set) target address
+            [SADDR]          (only if bit 7 set) source address
+            [data…]          service byte + payload — exactly (FMT & 0x7F) bytes
+
+        No trailing checksum in this protocol variant.
         """
-        header = self.recv(2, timeout_s)
+        fmt_raw  = self.recv(1, timeout_s)
+        fmt      = fmt_raw[0]
+        has_addr = bool(fmt & 0x80)
+        data_len = fmt & 0x7F
 
-        if header[0] != 0x80:
-            raise KLineError(
-                f"Unexpected frame header byte: 0x{header[0]:02X} "
-                f"(expected 0x80) — full header: {header.hex()}"
-            )
+        if has_addr:
+            addr  = self.recv(2)
+            data  = self.recv(data_len)
+            frame = fmt_raw + addr + data
+        else:
+            data  = self.recv(data_len)
+            frame = fmt_raw + data
 
-        body_and_checksum = self.recv(header[1] + 1)   # len bytes + 1 checksum
-        frame = header + body_and_checksum
-
-        expected = P.checksum(frame[:-1])
-        if frame[-1] != expected:
-            raise KLineError(
-                f"Checksum mismatch — got 0x{frame[-1]:02X}, "
-                f"expected 0x{expected:02X} — frame: {frame.hex(' ')}"
-            )
-
+        log.debug("RX: %s", frame.hex(' '))
         return frame
