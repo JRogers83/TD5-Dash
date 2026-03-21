@@ -26,6 +26,7 @@ P4_INTER_BYTE_MS   = 5     # Gap between bytes sent from tester
 
 # ── KWP2000 service IDs ────────────────────────────────────────────────────────
 SVC_START_COMMUNICATION = 0x81   # StartCommunication — must be first, before StartDiagnosticSession
+SVC_STOP_COMMUNICATION  = 0x82   # StopCommunication — end diagnostic session cleanly
 SVC_START_DIAG          = 0x10   # StartDiagnosticSession
 SVC_STOP_DIAG           = 0x20   # StopDiagnosticSession
 SVC_ECU_RESET           = 0x11   # ECUReset
@@ -69,12 +70,13 @@ SA_SEND_KEY     = 0x02
 # The individual PIDs below may also work — the diag tool probes both.
 PID_FUELLING = 0x01
 
-PID_RPM      = 0x09
-PID_TEMPS    = 0x1A
-PID_MAP_MAF  = 0x1C
-PID_BATTERY  = 0x10
-PID_SPEED    = 0x0D
-PID_THROTTLE = 0x1B
+PID_RPM      = 0x09   # 2B — engine running only
+PID_TEMPS    = 0x1A   # 16B — coolant, air, external, fuel (always available)
+PID_MAP_MAF  = 0x1C   # 8B — MAP + MAF (always available)
+PID_BATTERY  = 0x10   # 4B — system voltage — engine running only
+PID_SPEED    = 0x0D   # 1B — road speed (always available)
+PID_THROTTLE = 0x1B   # 10B — pedal position — engine running only
+PID_FAULTS   = 0x20   # 4B — 2 x 16-bit stored fault codes (always available)
 
 
 # ── Frame helpers ──────────────────────────────────────────────────────────────

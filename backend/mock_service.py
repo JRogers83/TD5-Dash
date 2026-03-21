@@ -7,11 +7,13 @@ _MOCK: dict = {
         "rpm": 850,
         "coolant_temp_c": 88,
         "inlet_air_temp_c": 22,
+        "external_temp_c": 15,
         "boost_bar": 0.0,
         "throttle_pct": 0,
         "battery_v": 14.1,
         "road_speed_kph": 0,
         "fuel_temp_c": 35,
+        "fault_codes": [],
     },
     "victron": {
         "soc_pct": 87,

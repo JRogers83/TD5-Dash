@@ -9,6 +9,10 @@ event loop is never blocked. On any connection failure the thread retries
 automatically after a short delay — the frontend will simply stop receiving
 engine updates until the ECU is back.
 
+PIDs 0x09 (RPM), 0x10 (Battery), and 0x1B (Throttle) only respond when the
+engine is running. With ignition-only, the poll loop broadcasts available data
+(temps, speed, MAP) with defaults for the unavailable fields.
+
 Configuration (environment variables):
   TD5_FTDI_URL      PyFtdi device URL        default: ftdi://ftdi:232/1
   TD5_POLL_INTERVAL Poll interval in seconds  default: 1.0
@@ -32,6 +36,7 @@ log = logging.getLogger(__name__)
 FTDI_URL      = os.getenv("TD5_FTDI_URL",      "ftdi://ftdi:232/1")
 POLL_INTERVAL = float(os.getenv("TD5_POLL_INTERVAL", "1.0"))
 RETRY_DELAY_S = 5.0   # seconds to wait before reconnecting after a failure
+FAULT_POLL_INTERVAL_S = 30.0  # read fault codes every N seconds
 
 
 # ── Session-level K-Line operations ───────────────────────────────────────────
@@ -56,7 +61,7 @@ class TD5Session:
         """
         KWP2000 service 0x10 — StartDiagnosticSession.
 
-        Sub-function 0xA0 confirmed by Ekaitza_Itzali working sequence.
+        Sub-function 0xA0 = TD5 manufacturer-specific diagnostic mode.
         Frame sent: 02 10 A0 B2  →  ECU replies: 01 50 51
         """
         frame = P.build_frame(P.SVC_START_DIAG, 0xA0)
@@ -69,22 +74,13 @@ class TD5Session:
         """
         KWP2000 service 0x27 — SecurityAccess seed-key handshake.
 
-        Step 1: request seed  (subfunction 0x01)
-        Step 2: compute key from seed using TD5 LFSR algorithm
-        Step 3: send key      (subfunction 0x02)
-        Step 4: verify positive response
-
-        If authentication is rejected, the most likely cause is an incorrect
-        key polynomial in protocol.td5_seed_to_key(). Verify against
-        github.com/pajacobson/td5keygen before debugging hardware.
+        Confirmed on vehicle: seed 0xBA08 → key 0x70DC (engine running).
         """
         # Step 1 — request seed
         self._conn.send(P.build_frame(P.SVC_SECURITY_ACCESS, P.SA_REQUEST_SEED))
         resp = self._conn.recv_frame()
         self._assert_positive(resp, P.SVC_SECURITY_ACCESS, "SecurityAccess/seed")
 
-        # Short-format response: [FMT=0x04][0x67][0x01][seed_hi][seed_lo]
-        # frame[3] = seed_hi, frame[4] = seed_lo
         seed = (resp[3] << 8) | resp[4]
         log.debug("ECU seed: 0x%04X", seed)
 
@@ -106,22 +102,37 @@ class TD5Session:
 
     def read_local_id(self, pid: int) -> bytes:
         """
-        KWP2000 service 0x21 — ReadDataByLocalIdentifier for a single PID.
+        KWP2000 service 0x21 — ReadDataByLocalIdentifier.
 
-        The TD5 ECU does not return all parameters in one frame; each parameter
-        group requires a separate request with its own sub-identifier (pid).
-        See protocol.py for PID constants and payload layouts.
-
-        Returns the data payload bytes with header, service byte, identifier
-        echo, and checksum already stripped. Pass to the appropriate
-        decoder function in decoder.py.
+        Returns the data payload bytes with header stripped.
+        Raises KLineError on timeout or negative response.
         """
         self._conn.send(P.build_frame(P.SVC_READ_LOCAL_ID, pid))
         resp = self._conn.recv_frame()
-        self._assert_positive(resp, P.SVC_READ_LOCAL_ID, f"ReadDataByLocalIdentifier(0x{pid:02X})")
-        # Short-format response: [FMT][0x61][pid_echo][payload…]
-        # Strip FMT + service response byte + pid echo = first 3 bytes
+        self._assert_positive(resp, P.SVC_READ_LOCAL_ID, f"ReadLocalId(0x{pid:02X})")
         return resp[3:]
+
+    def read_local_id_safe(self, pid: int) -> bytes | None:
+        """read_local_id() but returns None on failure instead of raising.
+
+        Used in the poll loop for PIDs that only respond with the engine running
+        (0x09 RPM, 0x10 Battery, 0x1B Throttle). A timeout on these is expected
+        with ignition-only and should not crash the poll cycle.
+        """
+        try:
+            return self.read_local_id(pid)
+        except KLineError:
+            log.debug("PID 0x%02X unavailable (engine may not be running)", pid)
+            return None
+
+    def send_tester_present(self) -> None:
+        """Send TesterPresent (0x3E) keepalive to prevent session timeout."""
+        try:
+            self._conn.send(P.build_frame(P.SVC_TESTER_PRESENT))
+            resp = self._conn.recv_frame()
+            # Positive response = 0x7E
+        except KLineError:
+            log.debug("TesterPresent got no response — session may have dropped")
 
     # Standard KWP2000 negative response error codes
     _ERROR_CODES = {
@@ -164,6 +175,10 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
     Continuously re-establishes the K-Line session if the connection drops.
     Thread-safe: uses asyncio.run_coroutine_threadsafe to post data back to
     the event loop for WebSocket broadcast.
+
+    PIDs that only respond with the engine running (0x09, 0x10, 0x1B) are read
+    with read_local_id_safe() — timeouts on these produce default values (0)
+    rather than crashing the poll cycle.
     """
     while True:
         log.info("Connecting to TD5 ECU at %s …", FTDI_URL)
@@ -173,49 +188,87 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                 session.start()
                 log.info("TD5 session active. Polling every %.1f s.", POLL_INTERVAL)
 
+                # Read fault codes once at session start
+                fault_codes: list[int] = []
+                try:
+                    fault_payload = session.read_local_id(P.PID_FAULTS)
+                    fault_codes = D.decode_faults(fault_payload)
+                    if fault_codes:
+                        log.info("Stored fault codes: %s",
+                                 [f"0x{c:04X}" for c in fault_codes])
+                except KLineError:
+                    log.debug("Could not read fault codes at session start")
+
+                last_fault_read = time.monotonic()
+                last_successful_read = time.monotonic()
+
                 while True:
                     try:
-                        # The TD5 ECU uses separate per-PID requests — no monolithic frame.
-                        rpm       = D.decode_rpm(      session.read_local_id(P.PID_RPM))
-                        temps     = session.read_local_id(P.PID_TEMPS)
+                        # ── Always-available PIDs ────────────────────────
+                        temps = session.read_local_id(P.PID_TEMPS)
                         coolant   = D.decode_coolant_temp(temps)
                         air_temp  = D.decode_air_temp(temps)
+                        ext_temp  = D.decode_external_temp(temps)
                         fuel_temp = D.decode_fuel_temp(temps)
-                        boost     = D.decode_boost(    session.read_local_id(P.PID_MAP_MAF))
-                        battery   = D.decode_battery(  session.read_local_id(P.PID_BATTERY))
-                        speed     = D.decode_speed(    session.read_local_id(P.PID_SPEED))
-                        throttle  = D.decode_throttle( session.read_local_id(P.PID_THROTTLE))
 
-                        # Only broadcast if all critical readings decoded successfully
-                        if None in (rpm, coolant, air_temp, fuel_temp, boost, battery, speed, throttle):
-                            log.warning(
-                                "One or more PID reads returned None — "
-                                "rpm=%s coolant=%s air=%s fuel=%s boost=%s batt=%s spd=%s thr=%s",
-                                rpm, coolant, air_temp, fuel_temp, boost, battery, speed, throttle,
-                            )
-                        else:
-                            asyncio.run_coroutine_threadsafe(
-                                manager.broadcast({
-                                    "type": "engine",
-                                    "data": {
-                                        "rpm":              round(rpm),
-                                        "coolant_temp_c":   coolant,
-                                        "inlet_air_temp_c": air_temp,
-                                        "boost_bar":        boost,
-                                        "throttle_pct":     throttle,
-                                        "battery_v":        battery,
-                                        "road_speed_kph":   round(speed),
-                                        "fuel_temp_c":      fuel_temp,
-                                    },
-                                }),
-                                loop,
-                            )
+                        boost = D.decode_boost(
+                            session.read_local_id(P.PID_MAP_MAF))
+                        speed = D.decode_speed(
+                            session.read_local_id(P.PID_SPEED))
+
+                        last_successful_read = time.monotonic()
+
+                        # ── Engine-running PIDs (safe — None on timeout) ─
+                        rpm_payload = session.read_local_id_safe(P.PID_RPM)
+                        rpm = D.decode_rpm(rpm_payload) if rpm_payload else None
+
+                        batt_payload = session.read_local_id_safe(P.PID_BATTERY)
+                        battery = D.decode_battery(batt_payload) if batt_payload else None
+
+                        thr_payload = session.read_local_id_safe(P.PID_THROTTLE)
+                        throttle = D.decode_throttle(thr_payload) if thr_payload else None
+
+                        # ── Periodic fault code refresh ──────────────────
+                        if time.monotonic() - last_fault_read > FAULT_POLL_INTERVAL_S:
+                            try:
+                                fault_payload = session.read_local_id(P.PID_FAULTS)
+                                fault_codes = D.decode_faults(fault_payload)
+                                last_fault_read = time.monotonic()
+                            except KLineError:
+                                pass  # keep previous fault_codes
+
+                        # ── Broadcast whatever data we have ──────────────
+                        asyncio.run_coroutine_threadsafe(
+                            manager.broadcast({
+                                "type": "engine",
+                                "data": {
+                                    "rpm":              round(rpm) if rpm is not None else 0,
+                                    "coolant_temp_c":   coolant,
+                                    "inlet_air_temp_c": air_temp,
+                                    "external_temp_c":  ext_temp,
+                                    "boost_bar":        boost,
+                                    "throttle_pct":     throttle if throttle is not None else 0.0,
+                                    "battery_v":        battery if battery is not None else 0.0,
+                                    "road_speed_kph":   round(speed) if speed is not None else 0,
+                                    "fuel_temp_c":      fuel_temp,
+                                    "fault_codes":      fault_codes,
+                                },
+                            }),
+                            loop,
+                        )
 
                         time.sleep(POLL_INTERVAL)
 
                     except KLineError as exc:
+                        # A failure on an always-available PID means the
+                        # connection is broken — reconnect.
                         log.warning("K-Line read error: %s — reconnecting", exc)
-                        break   # break inner loop → re-init outer loop
+                        break
+
+                    # If all PIDs timed out (engine off, ECU sluggish), send
+                    # a keepalive to prevent the session from expiring.
+                    if time.monotonic() - last_successful_read > 3.0:
+                        session.send_tester_present()
 
         except KLineError as exc:
             log.error("K-Line connection failed: %s — retrying in %.0f s", exc, RETRY_DELAY_S)

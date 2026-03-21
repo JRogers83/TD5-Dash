@@ -111,7 +111,7 @@ Each view uses a horizontal flex row (`*-content` class) with `vdivider` element
 Per-topic messages to avoid a monolithic payload and keep views decoupled:
 
 ```json
-{"type": "engine",   "data": {"rpm": 0, "coolant_temp_c": 0, "boost_bar": 0, "throttle_pct": 0, "battery_v": 0, "inlet_air_temp_c": 0, "fuel_temp_c": 0, "road_speed_kph": 0}}
+{"type": "engine",   "data": {"rpm": 0, "coolant_temp_c": 0, "boost_bar": 0, "throttle_pct": 0, "battery_v": 0, "inlet_air_temp_c": 0, "external_temp_c": 0, "fuel_temp_c": 0, "road_speed_kph": 0, "fault_codes": []}}
 {"type": "victron",  "data": {"soc_pct": 0, "voltage_v": 0, "current_a": 0, "solar_yield_wh": 0, "charge_state": "", "orion_state": "", "orion_input_v": 0}}
 {"type": "spotify",  "data": {"connected": false, "playing": false, "error": false, "track": "", "artist": "", "album": "", "album_art_url": null, "progress_s": 0, "duration_s": 0, "device_name": "", "track_id": "", "liked": false}}
 {"type": "weather",  "data": {"current": {"temp_c": 0, "humidity_pct": 0, "weather_code": 0, "wind_kph": 0}, "forecast": [], "location": "", "stale": false}}

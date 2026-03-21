@@ -50,7 +50,13 @@ class KLineConnection:
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
     def open(self) -> None:
-        """Open the FTDI device, perform fast-init, and prepare for UART I/O."""
+        """Open the FTDI device, perform fast-init, and prepare for UART I/O.
+
+        Sends StopCommunication first to clear any leftover session from a
+        previous crash — confirmed necessary because the ECU rejects
+        StartCommunication with generalReject (0x10) if a session is active,
+        and each rejection resets the P3max timer (deadlock).
+        """
         try:
             from pyftdi.ftdi import Ftdi
         except ImportError as exc:
@@ -62,12 +68,17 @@ class KLineConnection:
         log.info("Opening FTDI device: %s", self._url)
         self._ftdi = Ftdi()
         self._ftdi.open_from_url(self._url)
+        self._cleanup_session()
         self._fast_init()
         self._start_communication()
         log.info("K-Line initialised — ready at %d baud", P.BAUD_RATE)
 
     def close(self) -> None:
         if self._ftdi:
+            try:
+                self._stop_communication()
+            except Exception:
+                pass
             try:
                 self._ftdi.close()
             except Exception:
@@ -151,6 +162,32 @@ class KLineConnection:
                 f"got 0x{actual:02X} — frame: {resp.hex(' ')}"
             )
         log.info("StartCommunication accepted — keyword bytes: %s", resp[2:].hex(' '))
+
+    def _stop_communication(self) -> None:
+        """Send StopCommunication (0x82) for clean session teardown."""
+        try:
+            frame = P.build_frame(P.SVC_STOP_COMMUNICATION)
+            log.debug("TX StopCommunication: %s", frame.hex(' '))
+            for byte in frame:
+                self._ftdi.write_data(bytes([byte]))
+                time.sleep(P.P4_INTER_BYTE_MS / 1000.0)
+            # Best-effort echo + response drain — don't raise on failure
+            time.sleep(0.1)
+            self._ftdi.purge_buffers()
+        except Exception:
+            pass
+
+    def _cleanup_session(self) -> None:
+        """Clear any leftover ECU session before fast-init.
+
+        If the ECU is in an active session (e.g. from a previous crash), it
+        rejects StartCommunication and each rejection resets the P3max timer.
+        Sending StopCommunication on the raw UART breaks this deadlock.
+        """
+        self._ftdi.set_baudrate(P.BAUD_RATE)
+        self._ftdi.purge_buffers()
+        self._stop_communication()
+        time.sleep(0.5)
 
     # ── Frame I/O ──────────────────────────────────────────────────────────────
 
