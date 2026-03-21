@@ -153,7 +153,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 |-------|-------------|--------|
 | 0 | OBD Proof of Concept (laptop + KKL cable) | **Complete** |
 | 1 | Bench Prototype — FastAPI backend, WebSocket hub, mock data, kiosk UI scaffold | **Complete** |
-| 2 | OBD Integration — TD5 K-Line service | **Complete (untested on vehicle)** |
+| 2 | OBD Integration — TD5 K-Line service | **Complete (vehicle-verified 2026-03-21)** |
 | 3 | Victron, Spotify, Weather, Starlink | **Complete** |
 | 4 | Power System & Vehicle Install | Pending |
 | 5 | Polish | Pending |
@@ -312,7 +312,8 @@ TD5-Dash/
 ├── documentation/
 │   ├── SPEC.md
 │   ├── starlink-mini-local-api.md
-│   └── TD5-ECU-Protocol-Technical-Reference.md
+│   ├── TD5-ECU-Protocol-Technical-Reference.md   # Protocol research from open-source projects
+│   └── TD5-ECU-Confirmed-Protocol.md             # Vehicle-verified protocol, PIDs, session trace
 ├── backend/
 │   ├── main.py             # FastAPI app — lifespan tasks, WS endpoint, REST endpoints
 │   ├── ws_hub.py           # WebSocket connection manager
@@ -354,8 +355,10 @@ TD5-Dash/
 
 ## Key Constraints
 
-- **No OBD-II standard PIDs** — TD5 uses proprietary K-Line protocol (pyTD5Tester)
-- **No ELM327** — will not work with this ECU
+- **No OBD-II standard PIDs** — TD5 uses proprietary K-Line protocol (KWP2000 at 10400 baud with ISO 14230 checksums). Confirmed working on vehicle 2026-03-21. See `documentation/TD5-ECU-Confirmed-Protocol.md`
+- **No ELM327** — will not work with this ECU; requires VAG COM KKL cable with genuine FTDI FT232RL for bitbang fast-init
+- **P3 inter-message gap (55ms)** — mandatory when engine is running; ECU drops requests without it
+- **ECU session persistence** — session survives fast-init pulses; must send StopCommunication (0x82) to clear leftover sessions
 - **Boot target** — <10 seconds to kiosk live (Phase 5 concern)
 - **Pi 5 has no 3.5mm jack** — audio via CarPiHAT DAC, BT A2DP, or USB DAC
 - **Spotify API (Feb 2026)** — library endpoints unified under `/me/library`; redirect URI must use `127.0.0.1` not `localhost`; playlist item field is `item` not `track`

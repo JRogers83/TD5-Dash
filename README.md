@@ -270,6 +270,39 @@ STARLINK_MOCK=1
 
 ---
 
+## OBD / Engine Data
+
+The TD5 ECU uses a proprietary K-Line protocol (ISO 14230 / KWP2000 at 10400 baud) — not standard OBD-II. ELM327 adapters will not work.
+
+### Hardware
+
+A **VAG COM KKL 409.1 USB cable** with a genuine FTDI FT232RL chip is required. The cable's built-in level shifter converts between the FTDI's TTL and the K-Line's 12V signalling. PyFtdi's bitbang mode drives the fast-init pulse — ordinary serial libraries cannot do this.
+
+**Windows prerequisite:** PyFtdi requires the libusbK driver. Use [Zadig](https://zadig.akeo.ie) to replace the default FTDI VCP driver (Options > List All Devices > select FT232R > set driver to libusbK > Replace Driver). The cable will no longer appear as a COM port — this is expected.
+
+### Diagnostic tool
+
+A standalone diagnostic tool verifies the full communication chain without running the backend:
+
+```bash
+# Software-only (no cable needed) — verifies protocol code
+python tools/td5_diag.py
+
+# Full vehicle test (ignition ON or engine running, cable connected)
+python tools/td5_diag.py --vehicle --verbose
+
+# Try a range of fast-init timings if the default doesn't connect
+python tools/td5_diag.py --vehicle --verbose --timing-sweep
+```
+
+The tool runs 7 progressive stages: USB/FTDI detection, protocol self-test, fast-init + StartCommunication, StartDiagnosticSession, seed-key authentication, PID probe, and continuous polling. Results are logged to a timestamped text file in `tools/`.
+
+### Protocol documentation
+
+Full confirmed protocol details (frame format, checksums, timing, PID decoding, session trace) are in [`documentation/TD5-ECU-Confirmed-Protocol.md`](documentation/TD5-ECU-Confirmed-Protocol.md). The broader technical reference from open-source research is in [`documentation/TD5-ECU-Protocol-Technical-Reference.md`](documentation/TD5-ECU-Protocol-Technical-Reference.md).
+
+---
+
 ## Configuration Reference
 
 All variables are documented in [`.env.example`](.env.example). The table below summarises the mock toggles, which control whether each service uses real hardware/credentials or static placeholder data.
@@ -322,7 +355,8 @@ TD5-Dash/
 │       └── gauge.min.js    # Canvas Gauges library (engine view)
 │
 ├── tools/
-│   └── spotify_auth_setup.py  # One-time OAuth helper — run locally to get refresh token
+│   ├── spotify_auth_setup.py  # One-time OAuth helper — run locally to get refresh token
+│   └── td5_diag.py            # TD5 ECU diagnostic tool — progressive K-Line verification
 │
 ├── deploy/
 │   ├── setup.sh            # Pi first-time setup script (run as root)
@@ -330,7 +364,9 @@ TD5-Dash/
 │   └── xinitrc             # Chromium kiosk X session script
 │
 └── documentation/
-    └── SPEC.md             # Full hardware specification and project planning
+    ├── SPEC.md                                  # Full hardware specification and project planning
+    ├── TD5-ECU-Protocol-Technical-Reference.md   # Protocol research from open-source TD5 projects
+    └── TD5-ECU-Confirmed-Protocol.md             # Vehicle-verified protocol, PIDs, and session trace
 ```
 
 ---
@@ -405,6 +441,15 @@ Confirm the Pi's Bluetooth adapter can see the device: `bluetoothctl scan on`. V
 
 **Starlink view shows offline**
 The Pi cannot reach `192.168.100.1:9200`. Confirm the Pi is connected to the Starlink Wi-Fi network, not another network.
+
+**OBD — ECU not responding (all timings silent)**
+Confirm ignition is ON (not just accessory). Re-seat the OBD connector firmly. On Windows, confirm Zadig has swapped the FTDI driver to libusbK. Try cycling ignition OFF for 10+ seconds then ON again — the ECU may be in a security lockout from previous failed attempts.
+
+**OBD — ECU rejects StartCommunication (`7F 81 10`)**
+The ECU is stuck in a session from a previous run. The diagnostic tool sends StopCommunication automatically to clear this. If it persists, cycle ignition OFF for 10 seconds.
+
+**OBD — SecurityAccess or PID reads time out with engine running**
+The P3 inter-message delay (55ms between ECU response and next request) is required when the engine is running. This is enforced in the current code. If using older code, update from the repository.
 
 **Display not detected at boot**
 Confirm the dtoverlay line is in `/boot/firmware/config.txt`:
