@@ -24,3 +24,4 @@ deploy/plymouth/td5-dash/shimmer.png
 # OBD test/sweep tool log files
 tools/td5_test_*.txt
 tools/td5_sweep_*.txt
+tools/td5_diag_*.txt
