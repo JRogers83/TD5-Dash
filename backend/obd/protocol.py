@@ -17,7 +17,7 @@ TESTER_ADDR = 0xF7   # External diagnostic tester (us)
 
 # ── Timing constants (all in milliseconds unless noted) ────────────────────────
 BAUD_RATE          = 10400
-FAST_INIT_LOW_MS   = 25    # K-Line held low  — ISO 9141-2 fast-init pulse
+FAST_INIT_LOW_MS   = 22    # K-Line held low  — vehicle-confirmed (22ms minimum)
 FAST_INIT_HIGH_MS  = 25    # K-Line idle high — before first byte
 SETTLE_MS          = 50    # Post-mode-switch settle time
 P2_RESPONSE_MS     = 50    # Max wait for first ECU response byte (per KWP2000)

@@ -372,8 +372,16 @@ def stage2_protocol() -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# STAGE 3 — Fast-init + StartCommunication (vehicle required)
+# Vehicle stages 3–7 — single persistent FTDI connection
 # ═══════════════════════════════════════════════════════════════════════════
+#
+# DESIGN: The ECU holds its session for ~5 seconds (P3max). If we close the
+# FTDI between stages and re-open, the ECU rejects the new StartCommunication
+# because it's still in the old session. So stages 3–7 run on ONE connection.
+#
+# Stage 3 (timing sweep) is the exception — each timing attempt needs its own
+# connection because the fast-init resets the FTDI. Between failed attempts we
+# wait 6 seconds for the ECU to drop any session.
 
 def _do_fast_init(ftdi, low_ms: float) -> None:
     """Perform the fast-init pulse sequence."""
@@ -397,10 +405,11 @@ def _do_fast_init(ftdi, low_ms: float) -> None:
 def _attempt_start_comm(ftdi_url: str, low_ms: float) -> dict:
     """
     One complete attempt: fast-init → StartCommunication.
+    Opens and CLOSES its own FTDI connection.
 
     Returns dict with:
         level     0 = no response, 1 = StartComm accepted (0xC1)
-        resp_hex  hex string of ECU response (after echo stripping)
+        resp_hex  hex string of ECU response
     """
     from pyftdi.ftdi import Ftdi
     from obd import protocol as P
@@ -412,11 +421,9 @@ def _attempt_start_comm(ftdi_url: str, low_ms: float) -> dict:
         ftdi.open_from_url(ftdi_url)
         _do_fast_init(ftdi, low_ms)
 
-        # Send StartCommunication with checksum
         comm_frame = P.build_start_comm()
         _send_frame(ftdi, comm_frame)
 
-        # Read ECU response
         resp = _recv_frame(ftdi, timeout_s=2.0)
 
         if resp and len(resp) >= 2:
@@ -435,14 +442,64 @@ def _attempt_start_comm(ftdi_url: str, low_ms: float) -> dict:
     return result
 
 
-def stage3_start_comm(ftdi_url: str, timing_sweep: bool) -> Optional[int]:
+def _cleanup_session(ftdi_url: str) -> None:
     """
-    Returns the working LOW_MS timing, or None if all attempts failed.
+    Send StopCommunication (0x82) to kill any leftover ECU session.
+
+    If the ECU is in an active diagnostic session from a previous run, it will
+    reject all new StartCommunication attempts with generalReject (0x10) and
+    each rejected request resets the P3max timer — creating a deadlock.
+
+    This function breaks the deadlock by sending StopCommunication on the
+    existing K-Line link (no fast-init needed — the ECU is already listening).
+    """
+    from pyftdi.ftdi import Ftdi
+    from obd import protocol as P
+
+    ftdi = Ftdi()
+    try:
+        ftdi.open_from_url(ftdi_url)
+        ftdi.set_baudrate(P.BAUD_RATE)
+        ftdi.purge_buffers()
+
+        # StopCommunication: [LEN=0x01] [SVC=0x82] [CS]
+        stop_frame = P.build_frame(0x82)
+        _send_frame(ftdi, stop_frame)
+
+        # Read whatever comes back (positive, negative, or silence — all OK)
+        resp = _read_available(ftdi, 1.0)
+        if resp:
+            hexdump("StopComm response", resp)
+            ok("Sent StopCommunication — cleared leftover session")
+        else:
+            info("StopCommunication sent — no active session (expected)")
+
+        time.sleep(1.0)
+    except Exception:
+        pass  # best-effort cleanup
+    finally:
+        try:
+            ftdi.close()
+        except Exception:
+            pass
+
+
+def stage3_find_timing(ftdi_url: str, timing_sweep: bool) -> Optional[int]:
+    """
+    Stage 3: Find a working fast-init LOW pulse timing.
+    Each attempt opens its own FTDI connection and closes it afterward.
+    Returns the working LOW_MS, or None.
     """
     from obd import protocol as P
 
     warn("Vehicle required — ensure ignition is ON and KKL cable is seated")
     print()
+
+    # Clean up any leftover session from a previous run.
+    # If the ECU is stuck in a session, it rejects StartCommunication with
+    # generalReject (0x10) and each attempt resets the P3max timer.
+    info("Sending StopCommunication to clear any leftover session...")
+    _cleanup_session(ftdi_url)
 
     # Passive listen
     info("Passive listen (1s) — checking for existing K-Line activity...")
@@ -462,17 +519,18 @@ def stage3_start_comm(ftdi_url: str, timing_sweep: bool) -> Optional[int]:
         fail(f"Passive listen failed: {exc}")
         return None
 
-    # Timing candidates
     if timing_sweep:
         timings = [15, 18, 20, 22, 23, 24, 25, 26, 27, 28, 30, 33, 35]
     else:
-        timings = [25, 23, 27, 30]
+        timings = [22, 25, 23, 27, 30]
 
-    info(f"Sequence: fast-init → StartCommunication (81 13 F7 81 0C)")
+    info(f"Sequence: fast-init -> StartCommunication (81 13 F7 81 0C)")
     info(f"Expected response: 03 C1 57 8F AA")
     info(f"LOW pulse timings to try: {timings} ms")
     print()
     info(f"  {'LOW':>5}  {'Response':>40}  {'Result':>8}")
+
+    session_stuck = False
 
     for low_ms in timings:
         r = _attempt_start_comm(ftdi_url, low_ms)
@@ -486,6 +544,9 @@ def stage3_start_comm(ftdi_url: str, timing_sweep: bool) -> Optional[int]:
         else:
             resp_str = r["resp_hex"] or "silent"
             result_str = f"{RED}FAIL{RESET}"
+            # Detect stuck session: ECU responds 7F 81 10 (generalReject)
+            if "7f 81 10" in r["resp_hex"]:
+                session_stuck = True
 
         info(f"  {low_ms:>4}ms  {resp_str:>40}  {result_str:>8}")
 
@@ -497,8 +558,15 @@ def stage3_start_comm(ftdi_url: str, timing_sweep: bool) -> Optional[int]:
                 hint(f"Update FAST_INIT_LOW_MS = {low_ms} in backend/obd/protocol.py")
             return low_ms
 
-        # Recovery delay between attempts
-        time.sleep(2.0)
+        # If ECU is stuck in a session, send StopCommunication to break out
+        if session_stuck:
+            info("  (ECU in active session — sending StopCommunication)")
+            _cleanup_session(ftdi_url)
+            session_stuck = False
+            time.sleep(2.0)
+        else:
+            # Wait for ECU P3max timeout (~5s) before retrying
+            time.sleep(6.0)
 
     print()
     fail("No timing produced a StartCommunication response")
@@ -516,196 +584,126 @@ def stage3_start_comm(ftdi_url: str, timing_sweep: bool) -> Optional[int]:
     return None
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# STAGE 4 — StartDiagnosticSession
-# ═══════════════════════════════════════════════════════════════════════════
+def vehicle_session(ftdi_url: str, low_ms: int) -> dict:
+    """
+    Stages 4–7 on a SINGLE persistent FTDI connection.
 
-def stage4_diag_session(ftdi_url: str, low_ms: int) -> bool:
+    Opens the FTDI, performs the full init sequence (fast-init → StartComm →
+    DiagSession → Auth), then probes PIDs and optionally polls continuously.
+
+    Returns dict: {stage4: bool, stage5: bool, stage6: bool}
+    """
     from pyftdi.ftdi import Ftdi
     from obd import protocol as P
+
+    results = {"stage4": False, "stage5": False, "stage6": False}
+
+    # Wait for any previous session to expire before re-init
+    info("Waiting 6s for any previous ECU session to expire...")
+    time.sleep(6.0)
 
     ftdi = Ftdi()
     try:
         ftdi.open_from_url(ftdi_url)
         _do_fast_init(ftdi, low_ms)
 
-        # StartCommunication
+        # ── StartCommunication (re-establish on this connection) ─────────
         _send_frame(ftdi, P.build_start_comm())
         resp = _recv_frame(ftdi, timeout_s=2.0)
         if not resp or len(resp) < 2 or resp[1] != 0xC1:
-            fail(f"StartCommunication failed (unexpected for working timing)")
-            return False
+            resp_hex = resp.hex(' ') if resp else 'timeout'
+            fail(f"StartCommunication failed on session connection: {resp_hex}")
+            hint("ECU may still be in a previous session — wait 10s and re-run")
+            return results
         ok(f"StartCommunication: {resp.hex(' ')}")
 
-        # StartDiagnosticSession
+        # ── Stage 4: StartDiagnosticSession ──────────────────────────────
+        print(f"\n{BOLD}Stage  4  StartDiagnosticSession{RESET}")
+        print("-" * 50)
+
         diag_frame = P.build_frame(P.SVC_START_DIAG, 0xA0)
         _send_frame(ftdi, diag_frame)
         resp = _recv_frame(ftdi, timeout_s=2.0)
+
         if not resp or len(resp) < 2:
             fail("No response to StartDiagnosticSession")
-            hint("ECU accepted StartComm but not DiagSession — sub-function 0xA0 may be wrong")
-            return False
-
+            return results
         if resp[1] == P.SVC_START_DIAG + P.POSITIVE_RESPONSE_OFFSET:
             ok(f"StartDiagnosticSession accepted: {resp.hex(' ')}")
-            return True
+            results["stage4"] = True
         elif resp[1] == 0x7F:
             error_code = resp[3] if len(resp) > 3 else 0xFF
-            fail(f"StartDiagnosticSession rejected — error code 0x{error_code:02X}: {resp.hex(' ')}")
+            fail(f"StartDiagnosticSession rejected — 0x{error_code:02X}: {resp.hex(' ')}")
             _decode_error(error_code)
-            return False
+            return results
         else:
             fail(f"Unexpected response: {resp.hex(' ')}")
-            return False
+            return results
 
-    except Exception as exc:
-        fail(f"Stage 4 error: {exc}")
-        return False
-    finally:
-        try:
-            ftdi.close()
-        except Exception:
-            pass
+        # ── Stage 5: SecurityAccess ──────────────────────────────────────
+        print(f"\n{BOLD}Stage  5  SecurityAccess authentication{RESET}")
+        print("-" * 50)
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# STAGE 5 — SecurityAccess seed-key authentication
-# ═══════════════════════════════════════════════════════════════════════════
-
-def stage5_auth(ftdi_url: str, low_ms: int) -> bool:
-    from pyftdi.ftdi import Ftdi
-    from obd import protocol as P
-
-    ftdi = Ftdi()
-    try:
-        ftdi.open_from_url(ftdi_url)
-        _do_fast_init(ftdi, low_ms)
-
-        # StartCommunication
-        _send_frame(ftdi, P.build_start_comm())
-        resp = _recv_frame(ftdi, timeout_s=2.0)
-        if not resp or resp[1] != 0xC1:
-            fail("StartCommunication failed")
-            return False
-
-        # StartDiagnosticSession
-        _send_frame(ftdi, P.build_frame(P.SVC_START_DIAG, 0xA0))
-        resp = _recv_frame(ftdi, timeout_s=2.0)
-        if not resp or resp[1] != 0x50:
-            fail("StartDiagnosticSession failed")
-            return False
-
-        # SecurityAccess — request seed
         _send_frame(ftdi, P.build_frame(P.SVC_SECURITY_ACCESS, P.SA_REQUEST_SEED))
         resp = _recv_frame(ftdi, timeout_s=2.0)
+
         if not resp or len(resp) < 5:
             fail(f"No seed response: {resp.hex(' ') if resp else 'timeout'}")
-            return False
+            return results
+        if resp[1] == 0x7F:
+            error_code = resp[3] if len(resp) > 3 else 0xFF
+            fail(f"Seed request rejected — 0x{error_code:02X}: {resp.hex(' ')}")
+            _decode_error(error_code)
+            return results
         if resp[1] != 0x67:
-            fail(f"Seed request rejected: {resp.hex(' ')}")
-            _decode_error(resp[3] if len(resp) > 3 and resp[1] == 0x7F else 0xFF)
-            return False
+            fail(f"Unexpected seed response: {resp.hex(' ')}")
+            return results
 
         seed = (resp[3] << 8) | resp[4]
         key = P.td5_seed_to_key(seed)
-        ok(f"Seed received: 0x{seed:04X} → computed key: 0x{key:04X}")
+        ok(f"Seed: 0x{seed:04X} -> key: 0x{key:04X}")
 
-        # SecurityAccess — send key
         key_frame = P.build_frame(
             P.SVC_SECURITY_ACCESS, P.SA_SEND_KEY,
             (key >> 8) & 0xFF, key & 0xFF,
         )
         _send_frame(ftdi, key_frame)
         resp = _recv_frame(ftdi, timeout_s=2.0)
+
         if not resp or len(resp) < 2:
             fail("No response to key")
-            return False
+            return results
         if resp[1] == 0x67:
             ok(f"Authentication successful: {resp.hex(' ')}")
-            return True
+            results["stage5"] = True
         elif resp[1] == 0x7F:
             error_code = resp[3] if len(resp) > 3 else 0xFF
-            fail(f"Key rejected — error code 0x{error_code:02X}: {resp.hex(' ')}")
+            fail(f"Key rejected — 0x{error_code:02X}: {resp.hex(' ')}")
             _decode_error(error_code)
-            hint("Verify seed-key algorithm against github.com/pajacobson/td5keygen")
-            return False
+            return results
         else:
             fail(f"Unexpected auth response: {resp.hex(' ')}")
-            return False
+            return results
 
-    except Exception as exc:
-        fail(f"Stage 5 error: {exc}")
-        return False
-    finally:
-        try:
-            ftdi.close()
-        except Exception:
-            pass
+        # ── Stage 6: PID probe ───────────────────────────────────────────
+        print(f"\n{BOLD}Stage  6  PID probe{RESET}")
+        print("-" * 50)
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# STAGE 6 — PID probe
-# ═══════════════════════════════════════════════════════════════════════════
-
-def _establish_session(ftdi, low_ms: int) -> bool:
-    """Fast-init → StartComm → DiagSession → Auth. Returns True if all OK."""
-    from obd import protocol as P
-
-    _do_fast_init(ftdi, low_ms)
-
-    _send_frame(ftdi, P.build_start_comm())
-    resp = _recv_frame(ftdi, timeout_s=2.0)
-    if not resp or resp[1] != 0xC1:
-        return False
-
-    _send_frame(ftdi, P.build_frame(P.SVC_START_DIAG, 0xA0))
-    resp = _recv_frame(ftdi, timeout_s=2.0)
-    if not resp or resp[1] != 0x50:
-        return False
-
-    _send_frame(ftdi, P.build_frame(P.SVC_SECURITY_ACCESS, P.SA_REQUEST_SEED))
-    resp = _recv_frame(ftdi, timeout_s=2.0)
-    if not resp or resp[1] != 0x67:
-        return False
-    seed = (resp[3] << 8) | resp[4]
-    key = P.td5_seed_to_key(seed)
-
-    key_frame = P.build_frame(
-        P.SVC_SECURITY_ACCESS, P.SA_SEND_KEY,
-        (key >> 8) & 0xFF, key & 0xFF,
-    )
-    _send_frame(ftdi, key_frame)
-    resp = _recv_frame(ftdi, timeout_s=2.0)
-    return resp is not None and len(resp) >= 2 and resp[1] == 0x67
-
-
-def stage6_pid_probe(ftdi_url: str, low_ms: int) -> bool:
-    from pyftdi.ftdi import Ftdi
-    from obd import protocol as P
-
-    pids_to_try = [
-        (0x01, "Fuelling (all 22 fields)"),
-        (0x09, "RPM (individual)"),
-        (0x0D, "Speed (individual)"),
-        (0x10, "Battery (individual)"),
-        (0x1A, "Temperatures (individual)"),
-        (0x1B, "Throttle (individual)"),
-        (0x1C, "MAP/MAF (individual)"),
-        (0x08, "Input switches A"),
-        (0x20, "Current faults"),
-    ]
-
-    ftdi = Ftdi()
-    try:
-        ftdi.open_from_url(ftdi_url)
-        if not _establish_session(ftdi, low_ms):
-            fail("Could not establish authenticated session for PID probe")
-            return False
-        ok("Session established for PID probe")
+        pids_to_try = [
+            (0x01, "Fuelling (all 22 fields)"),
+            (0x09, "RPM (individual)"),
+            (0x0D, "Speed (individual)"),
+            (0x10, "Battery (individual)"),
+            (0x1A, "Temperatures (individual)"),
+            (0x1B, "Throttle (individual)"),
+            (0x1C, "MAP/MAF (individual)"),
+            (0x08, "Input switches A"),
+            (0x20, "Current faults"),
+        ]
 
         any_worked = False
         print()
-        info(f"  {'PID':>5}  {'Description':<30}  {'Response':>40}  {'Status':>8}")
+        info(f"  {'PID':>5}  {'Description':<30}  {'Bytes':>5}  {'Raw response'}")
 
         for pid, desc in pids_to_try:
             req = P.build_frame(P.SVC_READ_LOCAL_ID, pid)
@@ -715,95 +713,73 @@ def stage6_pid_probe(ftdi_url: str, low_ms: int) -> bool:
             if resp and len(resp) >= 2:
                 if resp[1] == P.SVC_READ_LOCAL_ID + P.POSITIVE_RESPONSE_OFFSET:
                     payload = resp[3:] if len(resp) > 3 else b''
-                    resp_str = resp.hex(' ')
-                    if len(resp_str) > 40:
-                        resp_str = resp_str[:37] + "..."
-                    info(f"  0x{pid:02X}   {desc:<30}  {resp_str:>40}  {GREEN}OK ({len(payload)}B){RESET}")
+                    info(f"  0x{pid:02X}   {desc:<30}  {len(payload):>3}B   {GREEN}{resp.hex(' ')}{RESET}")
                     any_worked = True
                 elif resp[1] == 0x7F:
                     error_code = resp[3] if len(resp) > 3 else 0xFF
-                    info(f"  0x{pid:02X}   {desc:<30}  {'rejected 0x' + f'{error_code:02X}':>40}  {YELLOW}NACK{RESET}")
+                    info(f"  0x{pid:02X}   {desc:<30}   --   {YELLOW}NACK 0x{error_code:02X}{RESET}")
                 else:
-                    info(f"  0x{pid:02X}   {desc:<30}  {resp.hex(' ')[:40]:>40}  {RED}???{RESET}")
+                    info(f"  0x{pid:02X}   {desc:<30}   --   {RED}{resp.hex(' ')}{RESET}")
             else:
-                info(f"  0x{pid:02X}   {desc:<30}  {'timeout':>40}  {RED}FAIL{RESET}")
+                info(f"  0x{pid:02X}   {desc:<30}   --   {RED}timeout{RESET}")
 
         print()
         if any_worked:
-            ok("At least one PID responded — ECU communication is working!")
+            ok("ECU communication is working — at least one PID responded!")
+            results["stage6"] = True
         else:
-            fail("No PIDs responded — session may have timed out or PIDs are wrong")
-            hint("The session may have expired during the probe. Try --verbose to see frame details.")
+            fail("No PIDs responded")
+            hint("Session may have timed out, or these PIDs are not supported by this ECU variant")
 
-        return any_worked
+        # ── Stage 7: Continuous poll (only if PIDs worked) ───────────────
+        if any_worked:
+            print(f"\n{BOLD}Stage  7  Continuous poll{RESET}")
+            print("-" * 50)
+            info("Polling for 10 cycles (press Ctrl+C to stop)...")
+            print()
 
-    except Exception as exc:
-        fail(f"Stage 6 error: {exc}")
-        return False
-    finally:
-        try:
-            ftdi.close()
-        except Exception:
-            pass
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# STAGE 7 — Continuous poll
-# ═══════════════════════════════════════════════════════════════════════════
-
-def stage7_poll(ftdi_url: str, low_ms: int) -> None:
-    from pyftdi.ftdi import Ftdi
-    from obd import protocol as P
-
-    info("Continuous poll — press Ctrl+C to stop")
-    print()
-
-    ftdi = Ftdi()
-    try:
-        ftdi.open_from_url(ftdi_url)
-        if not _establish_session(ftdi, low_ms):
-            fail("Could not establish session for continuous poll")
-            return
-
-        ok("Session active — polling PID 0x01 (fuelling)")
-        print()
-
-        cycle = 0
-        while True:
-            cycle += 1
-            req = P.build_frame(P.SVC_READ_LOCAL_ID, P.PID_FUELLING)
-            _send_frame(ftdi, req)
-            resp = _recv_frame(ftdi, timeout_s=2.0)
-
-            if resp and len(resp) >= 3 and resp[1] == 0x61:
-                payload = resp[3:]
-                _decode_fuelling(cycle, payload)
-            elif resp:
-                warn(f"Cycle {cycle}: unexpected response {resp.hex(' ')}")
-                # If PID 0x01 doesn't work, try individual RPM PID
-                if cycle == 1:
-                    info("PID 0x01 may not be supported — trying PID 0x09 (RPM)...")
-                    req = P.build_frame(P.SVC_READ_LOCAL_ID, 0x09)
+            try:
+                for cycle in range(1, 11):
+                    # Try PID 0x01 first, fall back to individual PIDs
+                    req = P.build_frame(P.SVC_READ_LOCAL_ID, P.PID_FUELLING)
                     _send_frame(ftdi, req)
                     resp = _recv_frame(ftdi, timeout_s=2.0)
-                    if resp and resp[1] == 0x61:
-                        info(f"PID 0x09 response: {resp.hex(' ')}")
-            else:
-                warn(f"Cycle {cycle}: timeout — session may have dropped")
-                break
 
-            time.sleep(1.0)
+                    if resp and len(resp) >= 3 and resp[1] == 0x61:
+                        payload = resp[3:]
+                        _decode_fuelling(cycle, payload)
+                    elif resp and resp[1] == 0x7F:
+                        # PID 0x01 not supported — try RPM
+                        if cycle == 1:
+                            info("PID 0x01 not supported, trying individual PIDs...")
+                        req = P.build_frame(P.SVC_READ_LOCAL_ID, 0x09)
+                        _send_frame(ftdi, req)
+                        resp = _recv_frame(ftdi, timeout_s=2.0)
+                        if resp and resp[1] == 0x61:
+                            payload = resp[3:]
+                            rpm = (payload[0] << 8 | payload[1]) if len(payload) >= 2 else 0
+                            info(f"  #{cycle:>3}  RPM={rpm}  (individual PID 0x09)")
+                    else:
+                        warn(f"Cycle {cycle}: no response — session may have dropped")
+                        break
 
-    except KeyboardInterrupt:
-        print()
-        ok(f"Stopped after {cycle} cycles")
+                    time.sleep(0.5)
+
+            except KeyboardInterrupt:
+                print()
+                ok("Stopped by user")
+
     except Exception as exc:
-        fail(f"Poll error: {exc}")
+        fail(f"Vehicle session error: {exc}")
+        import traceback
+        traceback.print_exc()
     finally:
         try:
             ftdi.close()
         except Exception:
             pass
+
+    return results
 
 
 def _decode_fuelling(cycle: int, payload: bytes) -> None:
@@ -945,31 +921,26 @@ def main() -> None:
         return
 
     # ── Vehicle stages ──────────────────────────────────────────────────
+    # Stage 3: find working init timing (each attempt opens its own connection)
     working_low_ms = run_stage(3, "Fast-init + StartCommunication",
-                               stage3_start_comm, args.url, args.timing_sweep)
+                               stage3_find_timing, args.url, args.timing_sweep)
     if working_low_ms is None and not args.stage:
         _print_summary(stages_run, stages_passed, stages_failed, log_path)
         return
 
+    # Stages 4–7: run on a SINGLE persistent connection
+    # (the ECU rejects re-init if the previous session hasn't expired)
     if working_low_ms is not None:
-        s4 = run_stage(4, "StartDiagnosticSession", stage4_diag_session,
-                        args.url, working_low_ms)
-        if s4 is False and not args.stage:
-            _print_summary(stages_run, stages_passed, stages_failed, log_path)
-            return
-
-        s5 = run_stage(5, "SecurityAccess authentication", stage5_auth,
-                        args.url, working_low_ms)
-        if s5 is False and not args.stage:
-            _print_summary(stages_run, stages_passed, stages_failed, log_path)
-            return
-
-        s6 = run_stage(6, "PID probe", stage6_pid_probe,
-                        args.url, working_low_ms)
-
-        if s6:
-            run_stage(7, "Continuous poll", stage7_poll,
-                      args.url, working_low_ms)
+        vs = vehicle_session(args.url, working_low_ms)
+        # Count each sub-stage
+        for stage_name, passed in [("stage4", vs.get("stage4")),
+                                    ("stage5", vs.get("stage5")),
+                                    ("stage6", vs.get("stage6"))]:
+            stages_run += 1
+            if passed:
+                stages_passed += 1
+            else:
+                stages_failed += 1
 
     _print_summary(stages_run, stages_passed, stages_failed, log_path)
 
