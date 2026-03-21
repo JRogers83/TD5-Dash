@@ -45,6 +45,7 @@ class KLineConnection:
     def __init__(self, url: str = 'ftdi://ftdi:232/1') -> None:
         self._url  = url
         self._ftdi = None
+        self._last_rx_time = 0.0
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -176,12 +177,19 @@ class KLineConnection:
 
     def send(self, frame: bytes) -> None:
         """
-        Write a KWP2000 frame byte-by-byte with inter-byte timing, then
-        consume the TX echo so recv_frame() sees only the ECU's reply.
+        Write a KWP2000 frame byte-by-byte with P3 inter-message gap and
+        P4 inter-byte timing, then consume the TX echo.
 
-        The inter-byte delay (P4) gives the ECU's UART enough time to
-        process each byte before the next arrives.
+        P3 gap (55ms) between end of last ECU response and start of next
+        request is critical when the engine is running — the ECU needs time
+        between messages to service engine management tasks.
         """
+        # P3 inter-message gap
+        elapsed = time.monotonic() - self._last_rx_time
+        p3_gap = P.P3_INTER_MSG_MS / 1000.0
+        if self._last_rx_time > 0 and elapsed < p3_gap:
+            time.sleep(p3_gap - elapsed)
+
         log.debug("TX: %s", frame.hex(' '))
         for byte in frame:
             self._ftdi.write_data(bytes([byte]))
@@ -250,5 +258,6 @@ class KLineConnection:
                 cs_raw[0], expected, frame.hex(' '),
             )
 
+        self._last_rx_time = time.monotonic()
         log.debug("RX frame: %s (cs=0x%02X)", frame.hex(' '), cs_raw[0])
         return frame

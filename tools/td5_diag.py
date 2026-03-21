@@ -161,8 +161,18 @@ def _consume_echo(ftdi, frame: bytes) -> None:
         warn(f"Echo incomplete: got {len(echo)}/{len(frame)} bytes")
 
 
+_last_rx_time = 0.0  # monotonic timestamp of last received frame
+
 def _send_frame(ftdi, frame: bytes, inter_byte_ms: float = 5.0) -> None:
-    """Send a frame byte-by-byte with inter-byte timing, then consume echo."""
+    """Send a frame byte-by-byte with P3 inter-message gap and inter-byte timing."""
+    global _last_rx_time
+    # P3 gap: wait at least 55ms after the last ECU response before sending.
+    # Critical when the engine is running — the ECU needs time between messages.
+    elapsed = time.monotonic() - _last_rx_time
+    p3_gap = 0.055  # 55ms per KWP2000 spec
+    if _last_rx_time > 0 and elapsed < p3_gap:
+        time.sleep(p3_gap - elapsed)
+
     hexdump("TX", frame)
     for byte in frame:
         ftdi.write_data(bytes([byte]))
@@ -205,6 +215,8 @@ def _recv_frame(ftdi, timeout_s: float = 2.0) -> Optional[bytes]:
         hexdump("RX (no cs)", frame)
         warn("No checksum byte received")
 
+    global _last_rx_time
+    _last_rx_time = time.monotonic()
     return frame
 
 
