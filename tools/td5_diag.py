@@ -372,16 +372,17 @@ def stage2_protocol() -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Vehicle stages 3–7 — single persistent FTDI connection
+# Vehicle stages 3–7
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# DESIGN: The ECU holds its session for ~5 seconds (P3max). If we close the
-# FTDI between stages and re-open, the ECU rejects the new StartCommunication
-# because it's still in the old session. So stages 3–7 run on ONE connection.
+# CRITICAL LESSON: Once the ECU accepts StartCommunication, it enters a
+# session that persists even through fast-init pulses. You CANNOT close the
+# FTDI, reopen, re-init, and re-send StartComm — the ECU rejects it with
+# generalReject (0x10) and each rejection resets the session timer.
 #
-# Stage 3 (timing sweep) is the exception — each timing attempt needs its own
-# connection because the fast-init resets the FTDI. Between failed attempts we
-# wait 6 seconds for the ECU to drop any session.
+# Therefore: the timing sweep and the full session (DiagSession, Auth, PIDs)
+# MUST run on the SAME FTDI connection. When the sweep finds a working timing,
+# it keeps the connection open and chains directly into Stages 4–7.
 
 def _do_fast_init(ftdi, low_ms: float) -> None:
     """Perform the fast-init pulse sequence."""
@@ -402,46 +403,6 @@ def _do_fast_init(ftdi, low_ms: float) -> None:
     ftdi.purge_buffers()
 
 
-def _attempt_start_comm(ftdi_url: str, low_ms: float) -> dict:
-    """
-    One complete attempt: fast-init → StartCommunication.
-    Opens and CLOSES its own FTDI connection.
-
-    Returns dict with:
-        level     0 = no response, 1 = StartComm accepted (0xC1)
-        resp_hex  hex string of ECU response
-    """
-    from pyftdi.ftdi import Ftdi
-    from obd import protocol as P
-
-    result = {"level": 0, "resp_hex": "", "error": ""}
-
-    ftdi = Ftdi()
-    try:
-        ftdi.open_from_url(ftdi_url)
-        _do_fast_init(ftdi, low_ms)
-
-        comm_frame = P.build_start_comm()
-        _send_frame(ftdi, comm_frame)
-
-        resp = _recv_frame(ftdi, timeout_s=2.0)
-
-        if resp and len(resp) >= 2:
-            result["resp_hex"] = resp.hex(' ')
-            if resp[1] == P.SVC_START_COMMUNICATION + P.POSITIVE_RESPONSE_OFFSET:
-                result["level"] = 1
-
-    except Exception as exc:
-        result["error"] = str(exc)
-    finally:
-        try:
-            ftdi.close()
-        except Exception:
-            pass
-
-    return result
-
-
 def _cleanup_session(ftdi_url: str) -> None:
     """
     Send StopCommunication (0x82) to kill any leftover ECU session.
@@ -449,9 +410,6 @@ def _cleanup_session(ftdi_url: str) -> None:
     If the ECU is in an active diagnostic session from a previous run, it will
     reject all new StartCommunication attempts with generalReject (0x10) and
     each rejected request resets the P3max timer — creating a deadlock.
-
-    This function breaks the deadlock by sending StopCommunication on the
-    existing K-Line link (no fast-init needed — the ECU is already listening).
     """
     from pyftdi.ftdi import Ftdi
     from obd import protocol as P
@@ -462,11 +420,9 @@ def _cleanup_session(ftdi_url: str) -> None:
         ftdi.set_baudrate(P.BAUD_RATE)
         ftdi.purge_buffers()
 
-        # StopCommunication: [LEN=0x01] [SVC=0x82] [CS]
         stop_frame = P.build_frame(0x82)
         _send_frame(ftdi, stop_frame)
 
-        # Read whatever comes back (positive, negative, or silence — all OK)
         resp = _read_available(ftdi, 1.0)
         if resp:
             hexdump("StopComm response", resp)
@@ -476,7 +432,7 @@ def _cleanup_session(ftdi_url: str) -> None:
 
         time.sleep(1.0)
     except Exception:
-        pass  # best-effort cleanup
+        pass
     finally:
         try:
             ftdi.close()
@@ -484,40 +440,47 @@ def _cleanup_session(ftdi_url: str) -> None:
             pass
 
 
-def stage3_find_timing(ftdi_url: str, timing_sweep: bool) -> Optional[int]:
+def vehicle_stages(ftdi_url: str, timing_sweep: bool) -> dict:
     """
-    Stage 3: Find a working fast-init LOW pulse timing.
-    Each attempt opens its own FTDI connection and closes it afterward.
-    Returns the working LOW_MS, or None.
+    Stages 3–7 all on ONE FTDI connection.
+
+    The timing sweep tries each LOW pulse timing. The FIRST timing that gets
+    a successful StartCommunication response keeps the connection open and
+    chains directly into DiagSession → Auth → PID probe → poll.
+
+    Returns dict with results for each stage.
     """
+    from pyftdi.ftdi import Ftdi
     from obd import protocol as P
 
+    results = {"stage3": False, "stage4": False, "stage5": False, "stage6": False}
+
+    # ── Stage 3: Fast-init + StartCommunication ──────────────────────────
+    print(f"\n{BOLD}Stage  3  Fast-init + StartCommunication{RESET}")
+    print("-" * 50)
     warn("Vehicle required — ensure ignition is ON and KKL cable is seated")
     print()
 
-    # Clean up any leftover session from a previous run.
-    # If the ECU is stuck in a session, it rejects StartCommunication with
-    # generalReject (0x10) and each attempt resets the P3max timer.
+    # Clean up any leftover session
     info("Sending StopCommunication to clear any leftover session...")
     _cleanup_session(ftdi_url)
 
     # Passive listen
     info("Passive listen (1s) — checking for existing K-Line activity...")
     try:
-        from pyftdi.ftdi import Ftdi
-        ftdi = Ftdi()
-        ftdi.open_from_url(ftdi_url)
-        ftdi.set_baudrate(P.BAUD_RATE)
-        ftdi.purge_buffers()
-        noise = _read_available(ftdi, 1.0)
-        ftdi.close()
+        ftdi_tmp = Ftdi()
+        ftdi_tmp.open_from_url(ftdi_url)
+        ftdi_tmp.set_baudrate(P.BAUD_RATE)
+        ftdi_tmp.purge_buffers()
+        noise = _read_available(ftdi_tmp, 1.0)
+        ftdi_tmp.close()
         if noise:
             warn(f"Bus activity detected: {noise.hex(' ')}")
         else:
             ok("K-Line quiet — ready for fast-init")
     except Exception as exc:
         fail(f"Passive listen failed: {exc}")
-        return None
+        return results
 
     if timing_sweep:
         timings = [15, 18, 20, 22, 23, 24, 25, 26, 27, 28, 30, 33, 35]
@@ -530,93 +493,71 @@ def stage3_find_timing(ftdi_url: str, timing_sweep: bool) -> Optional[int]:
     print()
     info(f"  {'LOW':>5}  {'Response':>40}  {'Result':>8}")
 
-    session_stuck = False
+    ftdi = None
+    working_low_ms = None
 
     for low_ms in timings:
-        r = _attempt_start_comm(ftdi_url, low_ms)
+        ftdi = Ftdi()
+        try:
+            ftdi.open_from_url(ftdi_url)
+            _do_fast_init(ftdi, low_ms)
 
-        if r["error"]:
-            resp_str = f"error: {r['error'][:35]}"
-            result_str = f"{RED}ERROR{RESET}"
-        elif r["level"] == 1:
-            resp_str = r["resp_hex"]
-            result_str = f"{GREEN}OK{RESET}"
-        else:
-            resp_str = r["resp_hex"] or "silent"
-            result_str = f"{RED}FAIL{RESET}"
-            # Detect stuck session: ECU responds 7F 81 10 (generalReject)
-            if "7f 81 10" in r["resp_hex"]:
-                session_stuck = True
+            _send_frame(ftdi, P.build_start_comm())
+            resp = _recv_frame(ftdi, timeout_s=2.0)
 
-        info(f"  {low_ms:>4}ms  {resp_str:>40}  {result_str:>8}")
+            if resp and len(resp) >= 2:
+                resp_hex = resp.hex(' ')
+                if resp[1] == 0xC1:
+                    info(f"  {low_ms:>4}ms  {resp_hex:>40}  {GREEN}OK{RESET}")
+                    print()
+                    ok(f"StartCommunication accepted — LOW pulse = {low_ms}ms")
+                    if low_ms != P.FAST_INIT_LOW_MS:
+                        warn(f"Working timing ({low_ms}ms) differs from protocol.py ({P.FAST_INIT_LOW_MS}ms)")
+                    working_low_ms = low_ms
+                    results["stage3"] = True
+                    break  # keep ftdi OPEN — chain into stages 4-7
+                else:
+                    info(f"  {low_ms:>4}ms  {resp_hex:>40}  {RED}FAIL{RESET}")
+                    # Stuck session: each rejection resets P3max timer
+                    if resp[1] == 0x7F and len(resp) > 3 and resp[3] == 0x10:
+                        ftdi.close()
+                        ftdi = None
+                        info("  (ECU in active session — sending StopCommunication)")
+                        _cleanup_session(ftdi_url)
+                        time.sleep(2.0)
+                        continue
+            else:
+                info(f"  {low_ms:>4}ms  {'silent':>40}  {RED}FAIL{RESET}")
 
-        if r["level"] == 1:
-            print()
-            ok(f"StartCommunication accepted — LOW pulse = {low_ms}ms")
-            if low_ms != P.FAST_INIT_LOW_MS:
-                warn(f"Working timing ({low_ms}ms) differs from protocol.py ({P.FAST_INIT_LOW_MS}ms)")
-                hint(f"Update FAST_INIT_LOW_MS = {low_ms} in backend/obd/protocol.py")
-            return low_ms
-
-        # If ECU is stuck in a session, send StopCommunication to break out
-        if session_stuck:
-            info("  (ECU in active session — sending StopCommunication)")
-            _cleanup_session(ftdi_url)
-            session_stuck = False
-            time.sleep(2.0)
-        else:
-            # Wait for ECU P3max timeout (~5s) before retrying
+            ftdi.close()
+            ftdi = None
             time.sleep(6.0)
 
-    print()
-    fail("No timing produced a StartCommunication response")
-    print()
-    hint("Diagnostic checklist:")
-    hint("  1. Is ignition definitely ON? (not just accessory)")
-    hint("  2. Is the KKL cable fully seated in the OBD-II port?")
-    hint("     TD5 OBD port: behind the centre cubby, driver's side")
-    hint("  3. Does the cable have a genuine FTDI FT232RL chip?")
-    hint("     (Counterfeit chips may not support bitbang mode correctly)")
-    hint("  4. Was the cable warm when plugged into the OBD port?")
-    hint("     (The level shifter needs 12V from the OBD port to function)")
-    hint("  5. Try cycling ignition OFF for 10+ seconds, then ON, then re-run")
-    hint("     (ECU may be in security lockout from previous failed attempts)")
-    return None
+        except Exception as exc:
+            info(f"  {low_ms:>4}ms  {f'error: {exc}'[:40]:>40}  {RED}ERROR{RESET}")
+            if ftdi:
+                try:
+                    ftdi.close()
+                except Exception:
+                    pass
+                ftdi = None
+            time.sleep(6.0)
 
+    if ftdi is None:
+        print()
+        fail("No timing produced a StartCommunication response")
+        print()
+        hint("Diagnostic checklist:")
+        hint("  1. Is ignition definitely ON? (not just accessory)")
+        hint("  2. Is the KKL cable fully seated in the OBD-II port?")
+        hint("     TD5 OBD port: behind the centre cubby, driver's side")
+        hint("  3. Does the cable have a genuine FTDI FT232RL chip?")
+        hint("  4. Try cycling ignition OFF for 10+ seconds, then ON, then re-run")
+        return results
 
-def vehicle_session(ftdi_url: str, low_ms: int) -> dict:
-    """
-    Stages 4–7 on a SINGLE persistent FTDI connection.
+    # ── From here on, ftdi is the SAME open connection from Stage 3 ──────
 
-    Opens the FTDI, performs the full init sequence (fast-init → StartComm →
-    DiagSession → Auth), then probes PIDs and optionally polls continuously.
-
-    Returns dict: {stage4: bool, stage5: bool, stage6: bool}
-    """
-    from pyftdi.ftdi import Ftdi
-    from obd import protocol as P
-
-    results = {"stage4": False, "stage5": False, "stage6": False}
-
-    # Wait for any previous session to expire before re-init
-    info("Waiting 6s for any previous ECU session to expire...")
-    time.sleep(6.0)
-
-    ftdi = Ftdi()
     try:
-        ftdi.open_from_url(ftdi_url)
-        _do_fast_init(ftdi, low_ms)
-
-        # ── StartCommunication (re-establish on this connection) ─────────
-        _send_frame(ftdi, P.build_start_comm())
-        resp = _recv_frame(ftdi, timeout_s=2.0)
-        if not resp or len(resp) < 2 or resp[1] != 0xC1:
-            resp_hex = resp.hex(' ') if resp else 'timeout'
-            fail(f"StartCommunication failed on session connection: {resp_hex}")
-            hint("ECU may still be in a previous session — wait 10s and re-run")
-            return results
-        ok(f"StartCommunication: {resp.hex(' ')}")
-
         # ── Stage 4: StartDiagnosticSession ──────────────────────────────
         print(f"\n{BOLD}Stage  4  StartDiagnosticSession{RESET}")
         print("-" * 50)
@@ -740,7 +681,6 @@ def vehicle_session(ftdi_url: str, low_ms: int) -> dict:
 
             try:
                 for cycle in range(1, 11):
-                    # Try PID 0x01 first, fall back to individual PIDs
                     req = P.build_frame(P.SVC_READ_LOCAL_ID, P.PID_FUELLING)
                     _send_frame(ftdi, req)
                     resp = _recv_frame(ftdi, timeout_s=2.0)
@@ -749,7 +689,6 @@ def vehicle_session(ftdi_url: str, low_ms: int) -> dict:
                         payload = resp[3:]
                         _decode_fuelling(cycle, payload)
                     elif resp and resp[1] == 0x7F:
-                        # PID 0x01 not supported — try RPM
                         if cycle == 1:
                             info("PID 0x01 not supported, trying individual PIDs...")
                         req = P.build_frame(P.SVC_READ_LOCAL_ID, 0x09)
@@ -920,27 +859,16 @@ def main() -> None:
         _print_summary(stages_run, stages_passed, stages_failed, log_path)
         return
 
-    # ── Vehicle stages ──────────────────────────────────────────────────
-    # Stage 3: find working init timing (each attempt opens its own connection)
-    working_low_ms = run_stage(3, "Fast-init + StartCommunication",
-                               stage3_find_timing, args.url, args.timing_sweep)
-    if working_low_ms is None and not args.stage:
-        _print_summary(stages_run, stages_passed, stages_failed, log_path)
-        return
-
-    # Stages 4–7: run on a SINGLE persistent connection
-    # (the ECU rejects re-init if the previous session hasn't expired)
-    if working_low_ms is not None:
-        vs = vehicle_session(args.url, working_low_ms)
-        # Count each sub-stage
-        for stage_name, passed in [("stage4", vs.get("stage4")),
-                                    ("stage5", vs.get("stage5")),
-                                    ("stage6", vs.get("stage6"))]:
-            stages_run += 1
-            if passed:
-                stages_passed += 1
-            else:
-                stages_failed += 1
+    # ── Vehicle stages 3–7 on one connection ─────────────────────────────
+    # The ECU does not allow re-init after a successful StartCommunication.
+    # All vehicle stages MUST chain on the same FTDI connection.
+    vs = vehicle_stages(args.url, args.timing_sweep)
+    for stage_key in ["stage3", "stage4", "stage5", "stage6"]:
+        stages_run += 1
+        if vs.get(stage_key):
+            stages_passed += 1
+        else:
+            stages_failed += 1
 
     _print_summary(stages_run, stages_passed, stages_failed, log_path)
 
