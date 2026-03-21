@@ -132,7 +132,7 @@ class KLineConnection:
         Send StartCommunication (SID 0x81) and verify the ECU responds.
 
         Uses the physical-addressing short format (see build_start_comm()).
-        Confirmed frame: 81 13 F7 81 → ECU replies 03 C1 57 8F.
+        Confirmed frame: 81 13 F7 81 0C → ECU replies 03 C1 57 8F AA.
 
         This must be the first KWP2000 service after the fast-init wake pulse.
         The ECU is silent until it receives this greeting.
@@ -210,11 +210,11 @@ class KLineConnection:
         log.debug("RX: %s", bytes(buf).hex(' '))
         return bytes(buf)
 
-    def recv_frame(self, timeout_s: float = 1.0) -> bytes:
+    def recv_frame(self, timeout_s: float = 2.0) -> bytes:
         """
-        Read a KWP2000 short-format frame from the ECU.
+        Read a KWP2000 frame from the ECU including the trailing checksum.
 
-        Confirmed frame structure (Ekaitza_Itzali / DiscoTD5):
+        Frame structure (ISO 14230 / TD5-ECU-Protocol-Technical-Reference):
 
             [FMT]            format/length byte
                                bit 7 = 1: TADDR + SADDR bytes follow
@@ -223,8 +223,10 @@ class KLineConnection:
             [TADDR]          (only if bit 7 set) target address
             [SADDR]          (only if bit 7 set) source address
             [data…]          service byte + payload — exactly (FMT & 0x7F) bytes
+            [CS]             checksum = sum of all preceding bytes mod 256
 
-        No trailing checksum in this protocol variant.
+        Returns the frame WITHOUT the checksum byte (for caller convenience).
+        Logs a warning if the checksum doesn't match.
         """
         fmt_raw  = self.recv(1, timeout_s)
         fmt      = fmt_raw[0]
@@ -239,5 +241,14 @@ class KLineConnection:
             data  = self.recv(data_len)
             frame = fmt_raw + data
 
-        log.debug("RX: %s", frame.hex(' '))
+        # Read and verify checksum byte
+        cs_raw   = self.recv(1)
+        expected = P.checksum(frame)
+        if cs_raw[0] != expected:
+            log.warning(
+                "Checksum mismatch: got 0x%02X, expected 0x%02X — frame: %s",
+                cs_raw[0], expected, frame.hex(' '),
+            )
+
+        log.debug("RX frame: %s (cs=0x%02X)", frame.hex(' '), cs_raw[0])
         return frame

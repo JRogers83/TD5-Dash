@@ -191,8 +191,8 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 ## Phase 2 Deliverables (complete — untested on vehicle)
 
 **Backend: `backend/obd/`**
-- `connection.py` — PyFtdi K-Line connection wrapper; fast-init (25ms low), configurable FTDI URL
-- `protocol.py` — KWP2000 frame builder, TD5 seed-key LFSR algorithm, per-PID constants (`PID_RPM`, `PID_TEMPS`, `PID_MAP_MAF`, `PID_BATTERY`, `PID_SPEED`, `PID_THROTTLE`)
+- `connection.py` — PyFtdi K-Line connection wrapper; fast-init (25ms low), configurable FTDI URL; `recv_frame()` reads and verifies ISO 14230 checksum byte
+- `protocol.py` — KWP2000 frame builder with ISO 14230 checksums on all frames, TD5 seed-key LFSR algorithm, per-PID constants (`PID_RPM`, `PID_TEMPS`, `PID_MAP_MAF`, `PID_BATTERY`, `PID_SPEED`, `PID_THROTTLE`, `PID_FUELLING`); `SVC_TESTER_PRESENT` for keepalive
 - `decoder.py` — per-PID response parsers with verified formulas:
   - RPM: 16-bit raw = RPM (confirmed)
   - Temps: 16-bit Kelvin×10 → `int16/10.0 - 273.2` °C (confirmed, stride 4 bytes per temp)
@@ -200,10 +200,18 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
   - Battery: 16-bit millivolts → `int16/1000.0` V (confirmed)
   - Speed: single byte = kph (confirmed)
   - Throttle: 16-bit P1 voltage ratiometric against supply (confirmed; pct calibration needs vehicle)
-- `service.py` — `TD5Session` (StartDiagnosticSession + SecurityAccess), per-PID poll cycle (`read_local_id(pid)` for each parameter group), blocking poll loop in `ThreadPoolExecutor`, broadcasts `{"type": "engine", ...}` to WebSocket hub
+- `service.py` — `TD5Session` (StartDiagnosticSession + SecurityAccess), per-PID poll cycle (`read_local_id(pid)` for each parameter group), blocking poll loop in `ThreadPoolExecutor`, broadcasts `{"type": "engine", ...}` to WebSocket hub; negative response (0x7F) error code decoding
 - Controlled by `TD5_MOCK` env var; configurable via `TD5_FTDI_URL`, `TD5_POLL_INTERVAL`
 
-**⚠ Critical structural note:** The TD5 ECU does NOT return all data in one frame. Each parameter group (RPM, temperatures, MAP, battery, speed, throttle) requires a separate ReadDataByLocalIdentifier (0x21) request with its own sub-identifier. Verified against Ekaitza_Itzali, pyTD5Tester, LRDuinoTD5.
+**⚠ Protocol correction (March 2026):** All KWP2000 frames REQUIRE an ISO 14230 checksum byte (sum of all preceding bytes mod 256). Prior code omitted checksums — this was the root cause of all failed vehicle communication attempts. Verified frames: `81 13 F7 81 0C` (StartComm), `02 10 A0 B2` (DiagSession), `02 27 01 2A` (RequestSeed). See `documentation/TD5-ECU-Protocol-Technical-Reference.md`.
+
+**⚠ PID mapping note:** The tech reference documents PID `0x01` returning all 22 fuelling parameters in one response. The individual PIDs (0x09, 0x1A, etc.) are also defined. The diagnostic tool (`tools/td5_diag.py`) probes both approaches to determine which this ECU supports.
+
+**Diagnostic tool: `tools/td5_diag.py`**
+- Progressive 7-stage verification: USB/FTDI detection → protocol self-test → fast-init → StartComm → DiagSession → SecurityAccess → PID probe → continuous poll
+- Run `python td5_diag.py` (software-only) or `python td5_diag.py --vehicle` (full test)
+- `--timing-sweep` flag to try a range of fast-init LOW pulse timings
+- Logs all TX/RX bytes to timestamped file, `--verbose` for full hex dumps
 
 **Prerequisites for live testing**
 - VAG COM KKL 409.1 USB cable with genuine FTDI FT232RL chip connected to vehicle OBD port
@@ -303,7 +311,8 @@ TD5-Dash/
 ├── .env.example            # documented reference for all env vars
 ├── documentation/
 │   ├── SPEC.md
-│   └── starlink-mini-local-api.md
+│   ├── starlink-mini-local-api.md
+│   └── TD5-ECU-Protocol-Technical-Reference.md
 ├── backend/
 │   ├── main.py             # FastAPI app — lifespan tasks, WS endpoint, REST endpoints
 │   ├── ws_hub.py           # WebSocket connection manager
@@ -333,7 +342,8 @@ TD5-Dash/
 │   └── lib/
 │       └── gauge.min.js    # Canvas Gauges v2.1.7 (local, no CDN)
 ├── tools/
-│   └── spotify_auth_setup.py  # One-time OAuth helper — run locally
+│   ├── spotify_auth_setup.py  # One-time OAuth helper — run locally
+│   └── td5_diag.py            # TD5 ECU diagnostic tool — progressive K-Line verification
 └── deploy/
     ├── setup.sh            # Pi first-time setup script (run as root)
     ├── td5-dash.service    # systemd unit template

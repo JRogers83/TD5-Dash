@@ -57,7 +57,7 @@ class TD5Session:
         KWP2000 service 0x10 — StartDiagnosticSession.
 
         Sub-function 0xA0 confirmed by Ekaitza_Itzali working sequence.
-        Frame sent: 02 10 A0  →  ECU replies: 01 50
+        Frame sent: 02 10 A0 B2  →  ECU replies: 01 50 51
         """
         frame = P.build_frame(P.SVC_START_DIAG, 0xA0)
         self._conn.send(frame)
@@ -123,15 +123,35 @@ class TD5Session:
         # Strip FMT + service response byte + pid echo = first 3 bytes
         return resp[3:]
 
+    # Standard KWP2000 negative response error codes
+    _ERROR_CODES = {
+        0x10: "generalReject",
+        0x11: "serviceNotSupported",
+        0x12: "subFunctionNotSupported",
+        0x13: "incorrectMessageLengthOrInvalidFormat",
+        0x22: "conditionsNotCorrect",
+        0x31: "requestOutOfRange",
+        0x33: "securityAccessDenied",
+        0x35: "invalidKey",
+        0x36: "exceededNumberOfAttempts",
+        0x78: "requestCorrectlyReceivedResponsePending",
+    }
+
     @staticmethod
     def _assert_positive(frame: bytes, service: int, name: str) -> None:
-        # Short-format frame: [FMT][SVC][data…] — service byte is at index 1
+        """Check that frame is a positive response; raise KLineError with
+        decoded error code if it's a negative response (0x7F)."""
         expected = service + P.POSITIVE_RESPONSE_OFFSET
         if len(frame) < 2 or frame[1] != expected:
             actual = frame[1] if len(frame) >= 2 else 0xFF
+            detail = ""
+            if actual == 0x7F and len(frame) >= 4:
+                code = frame[3]
+                meaning = TD5Session._ERROR_CODES.get(code, "unknown")
+                detail = f" — NRC 0x{code:02X} ({meaning})"
             raise KLineError(
-                f"{name}: expected positive response 0x{expected:02X}, "
-                f"got 0x{actual:02X} — full frame: {frame.hex(' ')}"
+                f"{name}: expected 0x{expected:02X}, got 0x{actual:02X}"
+                f"{detail} — frame: {frame.hex(' ')}"
             )
 
 

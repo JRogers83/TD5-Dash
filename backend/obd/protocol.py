@@ -31,6 +31,7 @@ SVC_STOP_DIAG           = 0x20   # StopDiagnosticSession
 SVC_ECU_RESET           = 0x11   # ECUReset
 SVC_SECURITY_ACCESS     = 0x27   # SecurityAccess (seed-key handshake)
 SVC_READ_LOCAL_ID       = 0x21   # ReadDataByLocalIdentifier (live data)
+SVC_TESTER_PRESENT      = 0x3E   # TesterPresent — keepalive heartbeat
 
 # Positive response = service_id | 0x40
 POSITIVE_RESPONSE_OFFSET = 0x40
@@ -63,6 +64,11 @@ SA_SEND_KEY     = 0x02
 #                           P3,P4:        int16/100.0  = volts
 #                           pct = (P1 / supply) * 100  (requires live calibration)
 
+# Per the tech reference, PID 0x01 returns all 22 fuelling parameters in one
+# response (RPM, battery, speed, temps, throttle, MAP, MAF, injection, etc.).
+# The individual PIDs below may also work — the diag tool probes both.
+PID_FUELLING = 0x01
+
 PID_RPM      = 0x09
 PID_TEMPS    = 0x1A
 PID_MAP_MAF  = 0x1C
@@ -74,8 +80,7 @@ PID_THROTTLE = 0x1B
 # ── Frame helpers ──────────────────────────────────────────────────────────────
 
 def checksum(data: bytes) -> int:
-    """8-bit additive checksum: sum of all bytes modulo 256.
-    Retained for reference / testing; not used in TD5 short-format frames."""
+    """ISO 14230 checksum: sum of all preceding bytes modulo 256."""
     return sum(data) & 0xFF
 
 
@@ -83,18 +88,20 @@ def build_frame(service: int, *payload: int) -> bytes:
     """
     Build a KWP2000 short-format request frame for the TD5.
 
-    Confirmed working format (Ekaitza_Itzali / DiscoTD5):
+    Format (used for all services AFTER StartCommunication):
 
         [LEN]   number of data bytes that follow  (= 1 + len(payload))
         [svc]   service ID
         [...]   optional payload bytes
+        [CS]    checksum = sum of all preceding bytes mod 256
 
-    No address bytes, no header byte 0x80, no checksum.
-    This format is used for all services AFTER StartCommunication has
-    established the session — see build_start_comm() for the exception.
+    Verified against TD5-ECU-Protocol-Technical-Reference.md:
+        build_frame(0x10, 0xA0) → 02 10 A0 B2
+        build_frame(0x27, 0x01) → 02 27 01 2A
     """
-    data = bytes([service] + list(payload))
-    return bytes([len(data)]) + data
+    data  = bytes([service] + list(payload))
+    frame = bytes([len(data)]) + data
+    return frame + bytes([checksum(frame)])
 
 
 def build_start_comm() -> bytes:
@@ -102,14 +109,16 @@ def build_start_comm() -> bytes:
     Build the StartCommunication frame.
 
     This is the only frame that uses physical addressing (address bytes
-    present).  Confirmed bytes from Ekaitza_Itzali: 81 13 F7 81.
+    present).  Confirmed bytes: 81 13 F7 81 0C.
 
         [0x81]  format byte — bit 7 set (address bytes present), length = 1
         [ECU]   target address (0x13)
         [TST]   source address (0xF7)
         [0x81]  StartCommunication service ID
+        [0x0C]  checksum
     """
-    return bytes([0x81, ECU_ADDR, TESTER_ADDR, SVC_START_COMMUNICATION])
+    frame = bytes([0x81, ECU_ADDR, TESTER_ADDR, SVC_START_COMMUNICATION])
+    return frame + bytes([checksum(frame)])
 
 
 # ── Seed-key algorithm ─────────────────────────────────────────────────────────
