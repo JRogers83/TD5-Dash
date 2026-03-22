@@ -39,6 +39,8 @@ done
 
 exec chromium \
     --kiosk \
+    --window-position=0,0 \
+    --window-size=1280,400 \
     --noerrdialogs \
     --disable-infobars \
     --disable-session-crashed-bubble \
