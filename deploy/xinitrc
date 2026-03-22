@@ -42,6 +42,11 @@ until curl -sf http://localhost:8000 >/dev/null 2>&1; do
     [ $i -ge 60 ] && break
 done
 
+# Hand off from Plymouth splash to Chromium.  Plymouth was kept alive
+# (plymouth-quit.service is masked) so the logo stays on screen during
+# the entire boot → autologin → X init → backend-wait sequence.
+plymouth quit 2>/dev/null || true
+
 exec chromium \
     --kiosk \
     --window-position=0,0 \

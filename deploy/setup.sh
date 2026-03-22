@@ -64,8 +64,12 @@ echo "▸ Configuring kiosk autostart in $SERVICE_HOME/.bash_profile..."
 BASH_PROFILE="$SERVICE_HOME/.bash_profile"
 KIOSK_MARKER="# td5-dash-kiosk-autostart"
 
-if ! grep -q "$KIOSK_MARKER" "$BASH_PROFILE" 2>/dev/null; then
-    cat >> "$BASH_PROFILE" <<EOF
+# Remove old kiosk block if present (allows re-generation with latest content)
+if grep -q "$KIOSK_MARKER" "$BASH_PROFILE" 2>/dev/null; then
+    sed -i "/$KIOSK_MARKER/,/^fi$/d" "$BASH_PROFILE"
+fi
+
+cat >> "$BASH_PROFILE" <<EOF
 
 $KIOSK_MARKER
 if [ "\$(tty)" = "/dev/tty1" ]; then
@@ -73,11 +77,8 @@ if [ "\$(tty)" = "/dev/tty1" ]; then
     xinit "$SCRIPT_DIR/xinitrc" -- :0 vt1 2>/tmp/td5-kiosk.log
 fi
 EOF
-    chown "$SERVICE_USER:$SERVICE_USER" "$BASH_PROFILE"
-    echo "  Kiosk autostart added."
-else
-    echo "  Kiosk autostart already present, skipping."
-fi
+chown "$SERVICE_USER:$SERVICE_USER" "$BASH_PROFILE"
+echo "  Kiosk autostart configured."
 
 # ── Console autologin ──────────────────────────────────────────────────────────
 echo "▸ Enabling console autologin for $SERVICE_USER..."
@@ -287,6 +288,16 @@ if [ -f "$INITRD" ] && [ -f "$FIRMWARE_INITRD" ]; then
     echo "  Copied initramfs to firmware partition."
 fi
 echo "  Plymouth theme '$THEME_NAME' installed."
+
+# ── Keep Plymouth on screen until Chromium is ready ──────────────────────────
+# By default, systemd quits Plymouth when multi-user.target is reached, which
+# causes a visible gap (console text) between the splash and the kiosk.
+# Masking plymouth-quit keeps the splash painted on screen.  xinitrc will
+# call 'plymouth quit' just before launching Chromium for a clean handoff.
+echo "▸ Configuring Plymouth to stay until kiosk starts..."
+systemctl mask plymouth-quit.service 2>/dev/null || true
+systemctl mask plymouth-quit-wait.service 2>/dev/null || true
+echo "  Plymouth quit masked — xinitrc will handle the handoff."
 
 # Enable splash + hide console text in kernel cmdline
 CMDLINE="/boot/firmware/cmdline.txt"
