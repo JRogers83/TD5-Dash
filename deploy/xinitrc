@@ -21,21 +21,8 @@ case "$_rot" in
 esac
 xrandr --output DSI-2 --rotate "$_xrot" 2>/dev/null || true
 
-# ── Touch coordinate transform ────────────────────────────────────────────────
-# The touchscreen reports in the panel's native portrait orientation.
-# After xrandr rotation, the touch axes no longer match the display.
-# Apply a coordinate transformation matrix to fix this.
-case "$_rot" in
-    90)  _matrix="0 1 0 -1 0 1 0 0 1"    ;;
-    180) _matrix="-1 0 1 0 -1 1 0 0 1"   ;;
-    270) _matrix="0 -1 1 1 0 0 0 0 1"    ;;
-    *)   _matrix="1 0 0 0 1 0 0 0 1"     ;;
-esac
-# Find the touchscreen device and apply the matrix
-_touch=$(xinput list --name-only 2>/dev/null | grep -i -m1 'touch\|goodix\|waveshare')
-if [ -n "$_touch" ]; then
-    xinput set-prop "$_touch" "Coordinate Transformation Matrix" $_matrix 2>/dev/null || true
-fi
+# Touch coordinate transform is handled by /etc/X11/xorg.conf.d/40-touch-rotation.conf
+# (written by setup.sh based on DISPLAY_ROTATION in .env)
 
 # Disable screen blanking and power management
 xset -dpms
