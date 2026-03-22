@@ -74,6 +74,8 @@ cat >> "$BASH_PROFILE" <<EOF
 $KIOSK_MARKER
 if [ "\$(tty)" = "/dev/tty1" ]; then
     setterm --foreground black --clear all 2>/dev/null
+    plymouth deactivate 2>/dev/null
+    plymouth quit 2>/dev/null
     xinit "$SCRIPT_DIR/xinitrc" -- :0 vt1 2>/tmp/td5-kiosk.log
 fi
 EOF
