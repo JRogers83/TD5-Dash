@@ -19,7 +19,7 @@ import sys
 from PIL import Image
 
 
-LOGO_HEIGHT_PCT = 60   # % of 400px display height = 240px
+LOGO_HEIGHT_PCT = 80   # % of 400px display height = 320px (10% margin top + bottom)
 
 
 def make_logo(src_path: str, dest_path: str, rotation: int) -> None:

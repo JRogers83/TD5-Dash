@@ -250,8 +250,7 @@ mkdir -p "$THEME_DEST"
 cp "$THEME_SRC/"* "$THEME_DEST/"
 
 # Set as default and rebuild initramfs (required for Plymouth to activate)
-plymouth-set-default-theme "$THEME_NAME"
-update-initramfs -u
+plymouth-set-default-theme -R "$THEME_NAME"
 echo "  Plymouth theme '$THEME_NAME' installed."
 
 # Enable splash in kernel cmdline — add 'quiet splash' if not already present
