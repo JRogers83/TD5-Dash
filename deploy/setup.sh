@@ -59,9 +59,6 @@ systemctl daemon-reload
 systemctl enable td5-dash.service
 echo "  td5-dash.service enabled."
 
-# ── Kiosk: xinitrc permissions ─────────────────────────────────────────────────
-chmod +x "$SCRIPT_DIR/xinitrc"
-
 # ── Kiosk: .bash_profile autostart ────────────────────────────────────────────
 echo "▸ Configuring kiosk autostart in $SERVICE_HOME/.bash_profile..."
 BASH_PROFILE="$SERVICE_HOME/.bash_profile"
