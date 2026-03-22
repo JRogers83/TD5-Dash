@@ -379,15 +379,34 @@ GPS data (shown on the Starlink view and used by the weather service for locatio
 
 ---
 
-## 12. Display Orientation
+## 12. Display
 
-The display is set up by `setup.sh` via a dtoverlay in `/boot/firmware/config.txt`:
+`setup.sh` configures the display automatically. It writes three entries to `/boot/firmware/config.txt`:
 
 ```
+dtoverlay=vc4-kms-v3d
 dtoverlay=vc4-kms-dsi-waveshare-panel,7_9_inch
+dtparam=i2c_arm=on
 ```
 
-The Pi outputs 1280×400 landscape. If the image appears rotated, check that this line is present and reboot.
+And prepends a video mode parameter to `/boot/firmware/cmdline.txt`:
+
+```
+video=DSI-1:400x1280e,rotate=90
+```
+
+The panel is physically 400×1280 portrait. The `video=` parameter tells the KMS framebuffer stack to use that resolution and rotate 90° — the result is 1280×400 landscape as seen by Chromium.
+
+`i2c_arm=on` is required for the capacitive touchscreen (Goodix I2C controller).
+
+**If the screen is dark after reboot**, verify these lines are present:
+
+```bash
+grep -E "vc4-kms|i2c_arm" /boot/firmware/config.txt
+grep "video=DSI-1" /boot/firmware/cmdline.txt
+```
+
+If either is missing, re-run `sudo ./deploy/setup.sh` and reboot.
 
 ---
 

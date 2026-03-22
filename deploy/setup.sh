@@ -99,18 +99,54 @@ fi
 
 # ── Display dtoverlay ──────────────────────────────────────────────────────────
 BOOT_CONFIG="/boot/firmware/config.txt"
-DTOVERLAY="dtoverlay=vc4-kms-dsi-waveshare-panel,7_9_inch"
 
 if [ -f "$BOOT_CONFIG" ]; then
-    if ! grep -qF "$DTOVERLAY" "$BOOT_CONFIG"; then
-        printf '\n# Waveshare 7.9" DSI display (1280x400 landscape via dtoverlay rotation)\n' >> "$BOOT_CONFIG"
-        echo "$DTOVERLAY" >> "$BOOT_CONFIG"
-        echo "▸ Display dtoverlay added to $BOOT_CONFIG"
+    # vc4-kms-v3d is required for KMS display stack — add if missing
+    if ! grep -q "dtoverlay=vc4-kms-v3d" "$BOOT_CONFIG"; then
+        echo "dtoverlay=vc4-kms-v3d" >> "$BOOT_CONFIG"
+        echo "▸ vc4-kms-v3d overlay added to $BOOT_CONFIG"
     else
-        echo "▸ Display dtoverlay already present in $BOOT_CONFIG"
+        echo "▸ vc4-kms-v3d already present in $BOOT_CONFIG"
+    fi
+
+    # Waveshare panel overlay
+    if ! grep -q "vc4-kms-dsi-waveshare-panel" "$BOOT_CONFIG"; then
+        printf '\n# Waveshare 7.9" DSI display\n' >> "$BOOT_CONFIG"
+        echo "dtoverlay=vc4-kms-dsi-waveshare-panel,7_9_inch" >> "$BOOT_CONFIG"
+        echo "▸ Waveshare DSI overlay added to $BOOT_CONFIG"
+    else
+        echo "▸ Waveshare DSI overlay already present in $BOOT_CONFIG"
+    fi
+
+    # I2C — required for capacitive touch controller
+    if ! grep -q "dtparam=i2c_arm=on" "$BOOT_CONFIG"; then
+        echo "dtparam=i2c_arm=on" >> "$BOOT_CONFIG"
+        echo "▸ I2C enabled in $BOOT_CONFIG"
+    else
+        echo "▸ I2C already enabled in $BOOT_CONFIG"
     fi
 else
-    echo "WARNING: $BOOT_CONFIG not found — add dtoverlay manually."
+    echo "WARNING: $BOOT_CONFIG not found — add overlays manually."
+fi
+
+# ── Display rotation (cmdline.txt) ─────────────────────────────────────────────
+# The panel is 400x1280 portrait. Pi OS Lite uses the video= kernel parameter
+# to set the display mode and rotation — this is the correct mechanism for
+# the KMS framebuffer stack (not xrandr, which requires a running X server).
+# rotate=90 gives 1280x400 landscape (the target resolution for this kiosk).
+CMDLINE="/boot/firmware/cmdline.txt"
+VIDEO_PARAM="video=DSI-1:400x1280e,rotate=90"
+
+if [ -f "$CMDLINE" ]; then
+    if ! grep -q "video=DSI-1" "$CMDLINE"; then
+        # Must be prepended on the same single line
+        sed -i "s|^|$VIDEO_PARAM |" "$CMDLINE"
+        echo "▸ Display mode/rotation added to $CMDLINE"
+    else
+        echo "▸ Display mode already present in $CMDLINE"
+    fi
+else
+    echo "WARNING: $CMDLINE not found — add '$VIDEO_PARAM' manually."
 fi
 
 # ── Raspotify (Spotify Connect / librespot) ────────────────────────────────────
