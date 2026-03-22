@@ -133,17 +133,25 @@ fi
 # The panel is 400x1280 portrait. Pi OS Lite uses the video= kernel parameter
 # to set the display mode and rotation — this is the correct mechanism for
 # the KMS framebuffer stack (not xrandr, which requires a running X server).
-# rotate=90 gives 1280x400 landscape (the target resolution for this kiosk).
+# DISPLAY_ROTATION is read from .env (default 270 = landscape, cable-left).
 CMDLINE="/boot/firmware/cmdline.txt"
-VIDEO_PARAM="video=DSI-1:400x1280e,rotate=90"
+ENV_FILE="$REPO_DIR/.env"
+DISPLAY_ROTATION=270
+if [ -f "$ENV_FILE" ]; then
+    _rot=$(grep -E '^DISPLAY_ROTATION=' "$ENV_FILE" | cut -d= -f2 | tr -d '[:space:]"'"'")
+    [ -n "$_rot" ] && DISPLAY_ROTATION="$_rot"
+fi
+VIDEO_PARAM="video=DSI-1:400x1280e,rotate=${DISPLAY_ROTATION}"
 
 if [ -f "$CMDLINE" ]; then
-    if ! grep -q "video=DSI-1" "$CMDLINE"; then
-        # Must be prepended on the same single line
-        sed -i "s|^|$VIDEO_PARAM |" "$CMDLINE"
-        echo "▸ Display mode/rotation added to $CMDLINE"
+    if grep -q "video=DSI-1" "$CMDLINE"; then
+        # Update rotation value in-place (re-run after changing DISPLAY_ROTATION)
+        sed -i "s|video=DSI-1:[^ ]*|$VIDEO_PARAM|" "$CMDLINE"
+        echo "▸ Display rotation updated to ${DISPLAY_ROTATION}° in $CMDLINE"
     else
-        echo "▸ Display mode already present in $CMDLINE"
+        # First run — prepend on the same single line
+        sed -i "s|^|$VIDEO_PARAM |" "$CMDLINE"
+        echo "▸ Display mode/rotation added to $CMDLINE (${DISPLAY_ROTATION}°)"
     fi
 else
     echo "WARNING: $CMDLINE not found — add '$VIDEO_PARAM' manually."

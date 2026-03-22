@@ -392,7 +392,7 @@ dtparam=i2c_arm=on
 And prepends a video mode parameter to `/boot/firmware/cmdline.txt`:
 
 ```
-video=DSI-1:400x1280e,rotate=90
+video=DSI-1:400x1280e,rotate=270
 ```
 
 The panel is physically 400×1280 portrait. The `video=` parameter tells the KMS framebuffer stack to use that resolution and rotate 90° — the result is 1280×400 landscape as seen by Chromium.
