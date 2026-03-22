@@ -141,11 +141,11 @@ if [ -f "$ENV_FILE" ]; then
     [ -n "$_rot" ] && DISPLAY_ROTATION="$_rot"
 fi
 echo "▸ Display rotation: ${DISPLAY_ROTATION}° (from .env)"
-VIDEO_PARAM="video=DSI-1:400x1280e,rotate=${DISPLAY_ROTATION}"
+VIDEO_PARAM="video=DSI-2:400x1280e,rotate=${DISPLAY_ROTATION}"
 
 if [ -f "$CMDLINE" ]; then
-    if grep -q "video=DSI-1" "$CMDLINE"; then
-        sed -i "s|video=DSI-1:[^ ]*|$VIDEO_PARAM|" "$CMDLINE"
+    if grep -q "video=DSI-[12]" "$CMDLINE"; then
+        sed -i "s|video=DSI-[12]:[^ ]*|$VIDEO_PARAM|" "$CMDLINE"
         echo "▸ Display mode updated in $CMDLINE"
     else
         sed -i "s|^|$VIDEO_PARAM |" "$CMDLINE"

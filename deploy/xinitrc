@@ -19,7 +19,7 @@ case "$_rot" in
     270) _xrot="left"     ;;
     *)   _xrot="normal"   ;;
 esac
-xrandr --output DSI-1 --rotate "$_xrot" 2>/dev/null || true
+xrandr --output DSI-2 --rotate "$_xrot" 2>/dev/null || true
 
 # Disable screen blanking and power management
 xset -dpms
