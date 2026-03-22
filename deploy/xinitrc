@@ -21,13 +21,37 @@ case "$_rot" in
 esac
 xrandr --output DSI-2 --rotate "$_xrot" 2>/dev/null || true
 
+# ── Touch coordinate transform ────────────────────────────────────────────────
+# The touchscreen reports in the panel's native portrait orientation.
+# After xrandr rotation, the touch axes no longer match the display.
+# Apply a coordinate transformation matrix to fix this.
+case "$_rot" in
+    90)  _matrix="0 1 0 -1 0 1 0 0 1"    ;;
+    180) _matrix="-1 0 1 0 -1 1 0 0 1"   ;;
+    270) _matrix="0 -1 1 1 0 0 0 0 1"    ;;
+    *)   _matrix="1 0 0 0 1 0 0 0 1"     ;;
+esac
+# Find the touchscreen device and apply the matrix
+_touch=$(xinput list --name-only 2>/dev/null | grep -i -m1 'touch\|goodix\|waveshare')
+if [ -n "$_touch" ]; then
+    xinput set-prop "$_touch" "Coordinate Transformation Matrix" $_matrix 2>/dev/null || true
+fi
+
 # Disable screen blanking and power management
 xset -dpms
 xset s off
 xset s noblank
 
-# Hide mouse cursor after 0.5 s of inactivity
-unclutter -idle 0.5 -root &
+# ── Invisible cursor ─────────────────────────────────────────────────────────
+# Create a 1x1 transparent bitmap and set it as the root cursor.
+# This is more reliable than unclutter on a touchscreen — no cursor flash
+# on touch events.
+cat > /tmp/td5-blank-cursor.xbm <<'XBM'
+#define t_width 1
+#define t_height 1
+static unsigned char t_bits[] = { 0x00 };
+XBM
+xsetroot -cursor /tmp/td5-blank-cursor.xbm /tmp/td5-blank-cursor.xbm
 
 # Wait for the FastAPI backend to become ready (max ~30 s)
 i=0
@@ -41,6 +65,9 @@ exec chromium \
     --kiosk \
     --window-position=0,0 \
     --window-size=1280,400 \
+    --touch-events=enabled \
+    --disable-pinch \
+    --overscroll-history-navigation=0 \
     --noerrdialogs \
     --disable-infobars \
     --disable-session-crashed-bubble \
