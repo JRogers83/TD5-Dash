@@ -28,7 +28,7 @@ apt-get update -qq
 apt-get install -y --no-install-recommends \
     python3-venv \
     python3-pil \
-    chromium-browser \
+    chromium \
     xserver-xorg-core \
     xserver-xorg-input-evdev \
     x11-xserver-utils \

@@ -18,7 +18,7 @@ until curl -sf http://localhost:8000 >/dev/null 2>&1; do
     [ $i -ge 60 ] && break
 done
 
-exec chromium-browser \
+exec chromium \
     --kiosk \
     --noerrdialogs \
     --disable-infobars \
