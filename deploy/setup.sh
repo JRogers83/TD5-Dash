@@ -74,8 +74,6 @@ cat >> "$BASH_PROFILE" <<EOF
 $KIOSK_MARKER
 if [ "\$(tty)" = "/dev/tty1" ]; then
     setterm --foreground black --clear all 2>/dev/null
-    plymouth deactivate 2>/dev/null
-    plymouth quit 2>/dev/null
     xinit "$SCRIPT_DIR/xinitrc" -- :0 vt1 2>/tmp/td5-kiosk.log
 fi
 EOF
@@ -291,15 +289,23 @@ if [ -f "$INITRD" ] && [ -f "$FIRMWARE_INITRD" ]; then
 fi
 echo "  Plymouth theme '$THEME_NAME' installed."
 
-# ── Keep Plymouth on screen until Chromium is ready ──────────────────────────
-# By default, systemd quits Plymouth when multi-user.target is reached, which
-# causes a visible gap (console text) between the splash and the kiosk.
-# Masking plymouth-quit keeps the splash painted on screen.  xinitrc will
-# call 'plymouth quit' just before launching Chromium for a clean handoff.
-echo "▸ Configuring Plymouth to stay until kiosk starts..."
-systemctl mask plymouth-quit.service 2>/dev/null || true
-systemctl mask plymouth-quit-wait.service 2>/dev/null || true
-echo "  Plymouth quit masked — xinitrc will handle the handoff."
+# ── Keep Plymouth splash visible through boot → kiosk transition ─────────────
+# Override plymouth-quit to use --retain-splash: Plymouth exits normally
+# (releasing the DRM device so X can start) but the splash image stays
+# painted on the framebuffer as static pixels until X takes over.
+# Combined with setterm black console in .bash_profile, this gives a
+# seamless logo → black → Chromium transition with no visible console text.
+echo "▸ Configuring Plymouth retain-splash..."
+systemctl unmask plymouth-quit.service 2>/dev/null || true
+systemctl unmask plymouth-quit-wait.service 2>/dev/null || true
+mkdir -p /etc/systemd/system/plymouth-quit.service.d
+cat > /etc/systemd/system/plymouth-quit.service.d/retain.conf <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/plymouth quit --retain-splash
+EOF
+systemctl daemon-reload
+echo "  Plymouth will retain splash on quit."
 
 # Enable splash + hide console text in kernel cmdline
 CMDLINE="/boot/firmware/cmdline.txt"
