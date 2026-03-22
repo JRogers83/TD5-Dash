@@ -29,16 +29,10 @@ xset -dpms
 xset s off
 xset s noblank
 
-# ── Invisible cursor ─────────────────────────────────────────────────────────
-# Create a 1x1 transparent bitmap and set it as the root cursor.
-# This is more reliable than unclutter on a touchscreen — no cursor flash
-# on touch events.
-cat > /tmp/td5-blank-cursor.xbm <<'XBM'
-#define t_width 1
-#define t_height 1
-static unsigned char t_bits[] = { 0x00 };
-XBM
-xsetroot -cursor /tmp/td5-blank-cursor.xbm /tmp/td5-blank-cursor.xbm
+# ── Hide cursor ──────────────────────────────────────────────────────────────
+# CSS cursor:none handles it inside Chromium's content area.
+# unclutter handles it at the X server level as a catch-all.
+unclutter -idle 0 -root &
 
 # Wait for the FastAPI backend to become ready (max ~30 s)
 i=0
