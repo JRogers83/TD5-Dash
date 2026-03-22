@@ -123,6 +123,14 @@ If `td5dash.local` doesn't resolve, check your router's DHCP client list for the
 
 ## 3. Clone the Repository
 
+Pi OS Lite does not include git by default. Install it first:
+
+```bash
+sudo apt install git -y
+```
+
+Then clone the repository:
+
 ```bash
 cd ~
 git clone https://github.com/JRogers83/TD5-Dash.git
@@ -290,31 +298,45 @@ The Pi will now appear as **Defender** in your Spotify device picker (via Raspot
 
 ## 9. OBD / K-Line Setup
 
-The KKL cable connects to the vehicle's OBD-II port. Before testing in the vehicle, verify the cable works at your desk using the test tool:
+The TD5 uses a proprietary K-Line protocol (not standard OBD-II) — ELM327 adapters will not work. You need a **VAG COM KKL 409.1 cable with a genuine FTDI FT232RL chip**.
 
-```bash
-# On your dev machine (Windows), from the repo root:
-python tools/td5_obd_test.py
-```
-
-It will ask whether you are in the vehicle. Say no for the desk test — this runs stages 1–7 (USB detection, PyFtdi, bitbang mode, protocol and decoder self-tests) without needing the car.
-
-**Windows driver requirement:** PyFtdi bypasses the standard FTDI VCP driver and requires libusbK instead. If stage 3 fails:
+**Windows driver requirement:** PyFtdi bypasses the standard FTDI VCP driver and requires libusbK. If the cable isn't detected:
 
 1. Download **Zadig** from [zadig.akeo.ie](https://zadig.akeo.ie)
 2. Plug in the KKL cable
 3. Options → List All Devices → select the FT232R device
 4. Set driver to **libusbK** → Replace Driver
 
-After the driver swap, re-run the test. The cable will no longer appear as a COM port — that is expected.
+The cable will no longer appear as a COM port — that is expected.
 
-When in the vehicle with the Pi connected to the OBD port:
+**Desk test (no vehicle needed):**
 
 ```bash
-python tools/td5_obd_test.py   # answer yes to "in vehicle"
+python tools/td5_diag.py
 ```
 
-Once all 11 stages pass, enable live OBD data:
+This runs stages 1–2: USB/FTDI detection, bitbang verification, frame checksum tests, and all 15 seed-key algorithm vectors. No cable or vehicle required for these stages.
+
+**Vehicle test (ignition ON or engine running, cable in OBD port):**
+
+```bash
+python tools/td5_diag.py --vehicle --verbose
+```
+
+This runs all 7 stages: fast-init, StartCommunication, StartDiagnosticSession, seed-key authentication, PID probe, and continuous polling. Results are logged to a timestamped file in `tools/`.
+
+If the first timing doesn't connect, try a wider sweep:
+
+```bash
+python tools/td5_diag.py --vehicle --verbose --timing-sweep
+```
+
+**Important notes from vehicle testing:**
+- Some PIDs (RPM, battery, throttle) only respond when the **engine is running** — ignition-only will show temps, speed, and MAP but not RPM or battery
+- If the tool reports `7F 81 10` (generalReject), the ECU is stuck in a previous session — the tool sends StopCommunication automatically to clear this, but cycling ignition OFF for 10 seconds is the nuclear option
+- The OBD connector must be firmly seated — engine vibration can cause intermittent failures on a marginal contact
+
+Once the diagnostic tool passes all stages, enable live OBD data:
 
 ```ini
 # In .env on the Pi:
@@ -324,6 +346,8 @@ TD5_MOCK=0
 ```bash
 sudo systemctl restart td5-dash
 ```
+
+Full protocol details are in `documentation/TD5-ECU-Confirmed-Protocol.md`.
 
 ---
 
