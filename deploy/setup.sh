@@ -172,7 +172,7 @@ cat > /etc/X11/xorg.conf.d/40-touch-rotation.conf <<EOF
 Section "InputClass"
     Identifier "Goodix touch rotation"
     MatchProduct "Goodix Capacitive TouchScreen"
-    Option "CalibrationMatrix" "$TOUCH_MATRIX"
+    Option "TransformationMatrix" "$TOUCH_MATRIX"
 EndSection
 EOF
 echo "  Touch transform written to /etc/X11/xorg.conf.d/40-touch-rotation.conf"
