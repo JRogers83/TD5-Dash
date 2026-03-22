@@ -1,66 +1,27 @@
 # TD5 Dash — Plymouth boot splash
-# Black background, Land Rover badge fades in then a shimmer sweeps across it.
-# Logo and shimmer are pre-rotated by prepare_logo.py to compensate for the
-# unrotated framebuffer (Plymouth runs before X11 rotation is applied).
+# Black background, Land Rover badge fades in.
+# Logo is pre-rotated by prepare_logo.py for the raw framebuffer.
 
-# ── Background ──────────────────────────────────
 Window.SetBackgroundTopColor(0, 0, 0);
 Window.SetBackgroundBottomColor(0, 0, 0);
 
-# ── Logo ────────────────────────────────────────
-logo_image   = Image("logo.png");
-logo_w       = logo_image.GetWidth();
-logo_h       = logo_image.GetHeight();
-logo_x       = (Window.GetWidth()  - logo_w) / 2;
-logo_y       = (Window.GetHeight() - logo_h) / 2;
+logo_image  = Image("logo.png");
+logo_x      = (Window.GetWidth()  - logo_image.GetWidth())  / 2;
+logo_y      = (Window.GetHeight() - logo_image.GetHeight()) / 2;
 
-logo_sprite  = Sprite(logo_image);
+logo_sprite = Sprite(logo_image);
 logo_sprite.SetPosition(logo_x, logo_y, 1);
 logo_sprite.SetOpacity(0);
 
-# ── Shimmer bar ─────────────────────────────────
-# Pre-rotated and alpha-masked to the logo shape by prepare_logo.py.
-shimmer_image  = Image("shimmer.png");
-shimmer_w      = shimmer_image.GetWidth();
-shimmer_h      = shimmer_image.GetHeight();
-shimmer_sprite = Sprite(shimmer_image);
-shimmer_sprite.SetPosition(logo_x - shimmer_w, logo_y, 2);
-shimmer_sprite.SetOpacity(0);
-
-# ── Animation ───────────────────────────────────
-# Phase 1 (frames 0–39):  logo fades in
-# Phase 2+ (repeating):   shimmer sweeps across logo over 60 frames,
-#                         then hides for 30 frames before repeating.
-
-FADE_FRAMES    = 40;
-SWEEP_FRAMES   = 60;
-PAUSE_FRAMES   = 30;
-CYCLE_FRAMES   = SWEEP_FRAMES + PAUSE_FRAMES;
-
-progress = 0;
+FADE_FRAMES = 40;
+progress    = 0;
 
 fun refresh_callback() {
   progress = progress + 1;
-
-  # Phase 1 — fade in
   if (progress <= FADE_FRAMES) {
     logo_sprite.SetOpacity(progress / FADE_FRAMES);
-    shimmer_sprite.SetOpacity(0);
-    return;
-  }
-
-  # Phase 2+ — logo fully visible, shimmer cycling
-  logo_sprite.SetOpacity(1.0);
-
-  t = (progress - FADE_FRAMES) % CYCLE_FRAMES;
-
-  if (t < SWEEP_FRAMES) {
-    # Sweep: shimmer moves across the logo area
-    sweep_x = logo_x + (t / SWEEP_FRAMES) * (logo_w + shimmer_w) - shimmer_w;
-    shimmer_sprite.SetPosition(sweep_x, logo_y, 2);
-    shimmer_sprite.SetOpacity(1.0);
   } else {
-    shimmer_sprite.SetOpacity(0);
+    logo_sprite.SetOpacity(1.0);
   }
 }
 

@@ -239,11 +239,10 @@ THEME_SRC="$SCRIPT_DIR/plymouth/$THEME_NAME"
 THEME_DEST="/usr/share/plymouth/themes/$THEME_NAME"
 LOGO_SRC="$REPO_DIR/LR-Logo.png"
 
-# Process the logo and generate shimmer bar (counter-rotated for unrotated framebuffer)
+# Process the logo (counter-rotated for unrotated framebuffer)
 python3 "$SCRIPT_DIR/plymouth/prepare_logo.py" \
     "$LOGO_SRC" \
     "$THEME_SRC/logo.png" \
-    "$THEME_SRC/shimmer.png" \
     "$DISPLAY_ROTATION"
 
 # Install theme files
