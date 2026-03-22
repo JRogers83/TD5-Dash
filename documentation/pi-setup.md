@@ -392,10 +392,10 @@ dtparam=i2c_arm=on
 And prepends a video mode parameter to `/boot/firmware/cmdline.txt`:
 
 ```
-video=DSI-1:400x1280e,rotate=270
+video=DSI-1:400x1280e
 ```
 
-The panel is physically 400×1280 portrait. The `video=` parameter tells the KMS framebuffer stack to use that resolution and rotate 90° — the result is 1280×400 landscape as seen by Chromium.
+**Rotation** is applied at X session start via `xrandr` in `deploy/xinitrc`, not via the kernel parameter (the `video=` rotate flag has no effect on X11/KMS). Set `DISPLAY_ROTATION` in `.env` — valid values are `0`, `90`, `180`, `270`. Default is `270` (landscape, cable entering from the left side of the screen). No reboot or re-run of setup is needed when changing rotation — the new value is read from `.env` each time the kiosk session starts.
 
 `i2c_arm=on` is required for the capacitive touchscreen (Goodix I2C controller).
 

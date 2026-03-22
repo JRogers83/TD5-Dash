@@ -129,29 +129,20 @@ else
     echo "WARNING: $BOOT_CONFIG not found — add overlays manually."
 fi
 
-# ── Display rotation (cmdline.txt) ─────────────────────────────────────────────
-# The panel is 400x1280 portrait. Pi OS Lite uses the video= kernel parameter
-# to set the display mode and rotation — this is the correct mechanism for
-# the KMS framebuffer stack (not xrandr, which requires a running X server).
-# DISPLAY_ROTATION is read from .env (default 270 = landscape, cable-left).
+# ── Display mode (cmdline.txt) ─────────────────────────────────────────────────
+# Sets the KMS video mode for the DSI panel. Rotation is NOT set here —
+# it is applied at X session start via xrandr in deploy/xinitrc, reading
+# DISPLAY_ROTATION from .env. The video= parameter only affects the
+# pre-X framebuffer console; xrandr is the correct mechanism for X11/KMS.
 CMDLINE="/boot/firmware/cmdline.txt"
-ENV_FILE="$REPO_DIR/.env"
-DISPLAY_ROTATION=270
-if [ -f "$ENV_FILE" ]; then
-    _rot=$(grep -E '^DISPLAY_ROTATION=' "$ENV_FILE" | cut -d= -f2 | tr -d '[:space:]"'"'")
-    [ -n "$_rot" ] && DISPLAY_ROTATION="$_rot"
-fi
-VIDEO_PARAM="video=DSI-1:400x1280e,rotate=${DISPLAY_ROTATION}"
+VIDEO_PARAM="video=DSI-1:400x1280e"
 
 if [ -f "$CMDLINE" ]; then
-    if grep -q "video=DSI-1" "$CMDLINE"; then
-        # Update rotation value in-place (re-run after changing DISPLAY_ROTATION)
-        sed -i "s|video=DSI-1:[^ ]*|$VIDEO_PARAM|" "$CMDLINE"
-        echo "▸ Display rotation updated to ${DISPLAY_ROTATION}° in $CMDLINE"
-    else
-        # First run — prepend on the same single line
+    if ! grep -q "video=DSI-1" "$CMDLINE"; then
         sed -i "s|^|$VIDEO_PARAM |" "$CMDLINE"
-        echo "▸ Display mode/rotation added to $CMDLINE (${DISPLAY_ROTATION}°)"
+        echo "▸ Display mode added to $CMDLINE"
+    else
+        echo "▸ Display mode already present in $CMDLINE"
     fi
 else
     echo "WARNING: $CMDLINE not found — add '$VIDEO_PARAM' manually."

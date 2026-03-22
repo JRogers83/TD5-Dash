@@ -2,6 +2,24 @@
 # TD5 Dash — Chromium kiosk X session
 # Launched by startx from ~/.bash_profile on tty1.
 
+# ── Display rotation ───────────────────────────────────────────────────────────
+# Read DISPLAY_ROTATION from .env (degrees: 0, 90, 180, 270).
+# Rotation is applied here via xrandr — the video= kernel parameter does not
+# affect X11/KMS and is not used for this.
+REPO_DIR="$(dirname "$(dirname "$(realpath "$0")")")"
+DISPLAY_ROTATION=270
+if [ -f "$REPO_DIR/.env" ]; then
+    _rot=$(grep -E '^DISPLAY_ROTATION=' "$REPO_DIR/.env" | cut -d= -f2 | tr -d '[:space:]"'"'"'")
+    [ -n "$_rot" ] && DISPLAY_ROTATION="$_rot"
+fi
+case "$DISPLAY_ROTATION" in
+    90)  _xrot="right"    ;;
+    180) _xrot="inverted" ;;
+    270) _xrot="left"     ;;
+    *)   _xrot="normal"   ;;
+esac
+xrandr --output DSI-1 --rotate "$_xrot"
+
 # Disable screen blanking and power management
 xset -dpms
 xset s off
