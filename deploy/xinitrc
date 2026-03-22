@@ -3,22 +3,23 @@
 # Launched by startx from ~/.bash_profile on tty1.
 
 # ── Display rotation ───────────────────────────────────────────────────────────
-# Read DISPLAY_ROTATION from .env (degrees: 0, 90, 180, 270).
-# Rotation is applied here via xrandr — the video= kernel parameter does not
-# affect X11/KMS and is not used for this.
-REPO_DIR="$(dirname "$(dirname "$(realpath "$0")")")"
-DISPLAY_ROTATION=270
+# Read DISPLAY_ROTATION from .env (degrees: 0, 90, 180, 270; default 270).
+# Applied via xrandr for the X11 session.  The video= kernel parameter in
+# cmdline.txt handles console/Plymouth rotation separately.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+_rot=270
 if [ -f "$REPO_DIR/.env" ]; then
-    _rot=$(grep -E '^DISPLAY_ROTATION=' "$REPO_DIR/.env" | cut -d= -f2 | tr -d '[:space:]"'"'"'")
-    [ -n "$_rot" ] && DISPLAY_ROTATION="$_rot"
+    _val=$(grep '^DISPLAY_ROTATION=' "$REPO_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2 | tr -cd '0-9')
+    [ -n "$_val" ] && _rot="$_val"
 fi
-case "$DISPLAY_ROTATION" in
+case "$_rot" in
     90)  _xrot="right"    ;;
     180) _xrot="inverted" ;;
     270) _xrot="left"     ;;
     *)   _xrot="normal"   ;;
 esac
-xrandr --output DSI-1 --rotate "$_xrot"
+xrandr --output DSI-1 --rotate "$_xrot" 2>/dev/null || true
 
 # Disable screen blanking and power management
 xset -dpms

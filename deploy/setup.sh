@@ -129,20 +129,27 @@ else
     echo "WARNING: $BOOT_CONFIG not found — add overlays manually."
 fi
 
-# ── Display mode (cmdline.txt) ─────────────────────────────────────────────────
-# Sets the KMS video mode for the DSI panel. Rotation is NOT set here —
-# it is applied at X session start via xrandr in deploy/xinitrc, reading
-# DISPLAY_ROTATION from .env. The video= parameter only affects the
-# pre-X framebuffer console; xrandr is the correct mechanism for X11/KMS.
+# ── Display mode + rotation (cmdline.txt) ──────────────────────────────────────
+# The video= parameter sets the framebuffer mode AND rotation for the console
+# and Plymouth splash.  X11/Chromium ignores this — xinitrc applies rotation
+# separately via xrandr.  Both read DISPLAY_ROTATION from .env.
 CMDLINE="/boot/firmware/cmdline.txt"
-VIDEO_PARAM="video=DSI-1:400x1280e"
+ENV_FILE="$REPO_DIR/.env"
+DISPLAY_ROTATION=270
+if [ -f "$ENV_FILE" ]; then
+    _rot=$(grep '^DISPLAY_ROTATION=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2 | tr -cd '0-9')
+    [ -n "$_rot" ] && DISPLAY_ROTATION="$_rot"
+fi
+echo "▸ Display rotation: ${DISPLAY_ROTATION}° (from .env)"
+VIDEO_PARAM="video=DSI-1:400x1280e,rotate=${DISPLAY_ROTATION}"
 
 if [ -f "$CMDLINE" ]; then
-    if ! grep -q "video=DSI-1" "$CMDLINE"; then
+    if grep -q "video=DSI-1" "$CMDLINE"; then
+        sed -i "s|video=DSI-1:[^ ]*|$VIDEO_PARAM|" "$CMDLINE"
+        echo "▸ Display mode updated in $CMDLINE"
+    else
         sed -i "s|^|$VIDEO_PARAM |" "$CMDLINE"
         echo "▸ Display mode added to $CMDLINE"
-    else
-        echo "▸ Display mode already present in $CMDLINE"
     fi
 else
     echo "WARNING: $CMDLINE not found — add '$VIDEO_PARAM' manually."
