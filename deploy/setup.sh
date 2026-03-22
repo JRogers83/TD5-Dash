@@ -69,6 +69,7 @@ if ! grep -q "$KIOSK_MARKER" "$BASH_PROFILE" 2>/dev/null; then
 
 $KIOSK_MARKER
 if [ "\$(tty)" = "/dev/tty1" ]; then
+    setterm --foreground black --clear all 2>/dev/null
     xinit "$SCRIPT_DIR/xinitrc" -- :0 vt1 2>/tmp/td5-kiosk.log
 fi
 EOF
@@ -251,18 +252,35 @@ cp "$THEME_SRC/"* "$THEME_DEST/"
 
 # Set as default and rebuild initramfs (required for Plymouth to activate)
 plymouth-set-default-theme -R "$THEME_NAME"
+
+# The -R flag rebuilds /boot/initrd.img-* but doesn't always copy it to
+# the firmware partition.  The Pi boots from /boot/firmware/, so we must
+# ensure the firmware copy is up to date.
+INITRD="/boot/initrd.img-$(uname -r)"
+FIRMWARE_INITRD="/boot/firmware/initramfs_2712"
+if [ -f "$INITRD" ] && [ -f "$FIRMWARE_INITRD" ]; then
+    cp "$INITRD" "$FIRMWARE_INITRD"
+    echo "  Copied initramfs to firmware partition."
+fi
 echo "  Plymouth theme '$THEME_NAME' installed."
 
-# Enable splash in kernel cmdline — add 'quiet splash' if not already present
+# Enable splash + hide console text in kernel cmdline
 CMDLINE="/boot/firmware/cmdline.txt"
 if [ -f "$CMDLINE" ]; then
     if ! grep -q "splash" "$CMDLINE"; then
-        # Append on the same line (cmdline.txt must be a single line)
         sed -i 's/$/ quiet splash plymouth.ignore-serial-consoles/' "$CMDLINE"
         echo "  Added 'quiet splash' to $CMDLINE"
     else
         echo "  'splash' already present in $CMDLINE — skipping."
     fi
+    # Hide kernel messages, Pi logo, and blinking cursor during the
+    # Plymouth → console → X transition so the screen stays black.
+    for param in "loglevel=0" "logo.nologo" "vt.global_cursor_default=0"; do
+        if ! grep -q "$param" "$CMDLINE"; then
+            sed -i "s/$/ $param/" "$CMDLINE"
+            echo "  Added '$param' to $CMDLINE"
+        fi
+    done
 else
     echo "  WARNING: $CMDLINE not found — add 'quiet splash' manually."
 fi
