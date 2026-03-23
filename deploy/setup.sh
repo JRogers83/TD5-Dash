@@ -59,6 +59,12 @@ systemctl daemon-reload
 systemctl enable td5-dash.service
 echo "  td5-dash.service enabled."
 
+# ── Suppress login messages on tty1 ──────────────────────────────────────────
+# .hushlogin suppresses MOTD and "Last login" banner that appear before
+# .bash_profile has a chance to run setterm.
+touch "$SERVICE_HOME/.hushlogin"
+chown "$SERVICE_USER:$SERVICE_USER" "$SERVICE_HOME/.hushlogin"
+
 # ── Kiosk: .bash_profile autostart ────────────────────────────────────────────
 echo "▸ Configuring kiosk autostart in $SERVICE_HOME/.bash_profile..."
 BASH_PROFILE="$SERVICE_HOME/.bash_profile"
@@ -322,6 +328,17 @@ if [ -f "$CMDLINE" ]; then
         if ! grep -q "$param" "$CMDLINE"; then
             sed -i "s/$/ $param/" "$CMDLINE"
             echo "  Added '$param' to $CMDLINE"
+        fi
+    done
+    # Set ALL 16 VT palette colours to black.  This makes every text colour
+    # invisible (black on black) so nothing is readable on the console —
+    # catches any text that appears before setterm runs in .bash_profile.
+    # SSH is unaffected (it uses its own terminal, not the VT).
+    VT_BLACK="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
+    for channel in "vt.default_red" "vt.default_grn" "vt.default_blu"; do
+        if ! grep -q "$channel" "$CMDLINE"; then
+            sed -i "s|$| ${channel}=${VT_BLACK}|" "$CMDLINE"
+            echo "  Added '$channel' to $CMDLINE"
         fi
     done
 else

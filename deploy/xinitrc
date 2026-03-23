@@ -21,6 +21,10 @@ case "$_rot" in
 esac
 xrandr --output DSI-2 --rotate "$_xrot" 2>/dev/null || true
 
+# Set root window to black immediately — prevents the default white X
+# background from flashing before Chromium paints.
+xsetroot -solid black 2>/dev/null || true
+
 # Touch coordinate transform is handled by /etc/X11/xorg.conf.d/40-touch-rotation.conf
 # (written by setup.sh based on DISPLAY_ROTATION in .env)
 
@@ -46,6 +50,7 @@ exec chromium \
     --kiosk \
     --window-position=0,0 \
     --window-size=1280,400 \
+    --force-dark-mode \
     --touch-events=enabled \
     --disable-pinch \
     --overscroll-history-navigation=0 \
