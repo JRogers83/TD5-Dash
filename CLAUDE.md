@@ -188,7 +188,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 
 ---
 
-## Phase 2 Deliverables (complete — untested on vehicle)
+## Phase 2 Deliverables (complete — vehicle-verified 2026-03-21)
 
 **Backend: `backend/obd/`**
 - `connection.py` — PyFtdi K-Line connection wrapper; fast-init (25ms low), configurable FTDI URL; `recv_frame()` reads and verifies ISO 14230 checksum byte
@@ -296,6 +296,14 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 - All formulas corrected per Ekaitza_Itzali / LRDuinoTD5 source verification
 - `service.py` now calls `read_local_id(pid)` for each PID group per poll cycle
 
+**Pi kiosk setup (2026-03-22/23)**
+- Display: X11 output is `DSI-2` (not DSI-1); xrandr rotation in `deploy/xinitrc` reads `DISPLAY_ROTATION` from `.env`
+- Touch: Goodix Capacitive TouchScreen via evdev driver; coordinate transform in `/etc/X11/xorg.conf.d/40-touch-rotation.conf` (option name is `TransformationMatrix`, not `CalibrationMatrix` — evdev, not libinput)
+- Cursor: hidden via CSS `cursor: none !important` on universal selector + `unclutter -idle 0 -root`
+- Plymouth: retain-splash override keeps logo on screen until X takes over; `prepare_logo.py` pre-rotates logo for unrotated framebuffer; initramfs must be copied to `/boot/firmware/initramfs_2712` after rebuild
+- Boot transition: `setterm --foreground black --clear all` in `.bash_profile`; `loglevel=0 logo.nologo vt.global_cursor_default=0` in cmdline.txt; `.hushlogin` suppresses login banner; `xsetroot -solid black` + `--force-dark-mode` for X/Chromium
+- systemd service: uses `EnvironmentFile=` to read `.env` (not hardcoded `Environment=` lines)
+
 ---
 
 ## Project Structure
@@ -309,8 +317,11 @@ TD5-Dash/
 ├── .dockerignore
 ├── .env                    # local secrets — not committed
 ├── .env.example            # documented reference for all env vars
+├── LR-Logo.png                 # Land Rover badge source image (used by Plymouth splash)
 ├── documentation/
 │   ├── SPEC.md
+│   ├── pi-setup.md             # Raspberry Pi setup guide (flash → kiosk)
+│   ├── home-assistant.md       # Home Assistant REST sensor integration
 │   ├── starlink-mini-local-api.md
 │   ├── TD5-ECU-Protocol-Technical-Reference.md   # Protocol research from open-source projects
 │   └── TD5-ECU-Confirmed-Protocol.md             # Vehicle-verified protocol, PIDs, session trace
@@ -348,7 +359,12 @@ TD5-Dash/
 └── deploy/
     ├── setup.sh            # Pi first-time setup script (run as root)
     ├── td5-dash.service    # systemd unit template
-    └── xinitrc             # Chromium kiosk X session
+    ├── xinitrc             # Chromium kiosk X session
+    └── plymouth/
+        ├── prepare_logo.py     # Logo resize + rotate for Plymouth splash
+        └── td5-dash/
+            ├── td5-dash.plymouth   # Theme metadata
+            └── td5-dash.script     # Splash animation script
 ```
 
 ---

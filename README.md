@@ -4,7 +4,7 @@ A custom in-vehicle display for a Land Rover Defender TD5, mounted in the dashbo
 
 Five swipeable views: engine gauges, Spotify, Victron battery/solar, Starlink connectivity, and system settings.
 
-For full hardware specification, mounting details, and vehicle context see [`documentation/SPEC.md`](documentation/SPEC.md).
+For full feature list, hardware specification, mounting details, and vehicle context see [`documentation/SPEC.md`](documentation/SPEC.md).
 
 ---
 

@@ -217,8 +217,8 @@ Display PCB at front of pod, viewable area aligned with fascia opening via 3D-pr
 ## 7. Open Questions
 
 - ~~Display resolution: confirm 400×1280 vs 400×1480 with seller.~~ RESOLVED: confirmed 1280×400 landscape (dtoverlay rotates panel output).
-- KKL cable FTDI authenticity: test with PyFtdi on receipt. (Pending — needs vehicle)
-- TD5 PID coverage: empirical testing needed in Phase 2. (Pending — needs vehicle)
+- ~~KKL cable FTDI authenticity: test with PyFtdi on receipt.~~ RESOLVED: confirmed working on vehicle 2026-03-21 with genuine FTDI FT232RL chip.
+- ~~TD5 PID coverage: empirical testing needed in Phase 2.~~ RESOLVED: all PIDs confirmed on vehicle. See `documentation/TD5-ECU-Confirmed-Protocol.md`.
 - CarPiHAT PRO 5 stock: UNRESOLVED — persistently out of stock at The Pi Hut; DIY discrete power (buck converter + optocouplers) identified as fallback path.
 - CarPiHAT I2C address conflicts with display touch controller. (Open — hardware not yet arrived)
 - Head unit replacement model and BT dual-pairing confirmation. (Open)

@@ -392,10 +392,14 @@ dtparam=i2c_arm=on
 And prepends a video mode parameter to `/boot/firmware/cmdline.txt`:
 
 ```
-video=DSI-1:400x1280e
+video=DSI-2:400x1280e,rotate=DISPLAY_ROTATION
 ```
 
-**Rotation** is applied at X session start via `xrandr` in `deploy/xinitrc`, not via the kernel parameter (the `video=` rotate flag has no effect on X11/KMS). Set `DISPLAY_ROTATION` in `.env` — valid values are `0`, `90`, `180`, `270`. Default is `270` (landscape, cable entering from the left side of the screen). No reboot or re-run of setup is needed when changing rotation — the new value is read from `.env` each time the kiosk session starts.
+The `video=` rotation affects the framebuffer console and Plymouth splash screen. It has **no effect** on X11/Chromium — that rotation is handled separately by `xrandr` in `deploy/xinitrc`.
+
+**Display rotation** is set via `DISPLAY_ROTATION` in `.env` — valid values are `0`, `90`, `180`, `270`. Default is `270` (landscape, power cable enters from the bottom). The xrandr rotation is read from `.env` on each kiosk session start (just reboot after changing). The `video=` parameter and Plymouth logo are updated when you re-run `setup.sh`.
+
+**Touch input** uses the Goodix capacitive controller via the evdev X11 driver. `setup.sh` writes a coordinate transformation matrix to `/etc/X11/xorg.conf.d/40-touch-rotation.conf` matching the display rotation. Re-run `setup.sh` after changing `DISPLAY_ROTATION` to update the touch mapping.
 
 `i2c_arm=on` is required for the capacitive touchscreen (Goodix I2C controller).
 
@@ -403,7 +407,7 @@ video=DSI-1:400x1280e
 
 ```bash
 grep -E "vc4-kms|i2c_arm" /boot/firmware/config.txt
-grep "video=DSI-1" /boot/firmware/cmdline.txt
+grep "video=DSI-2" /boot/firmware/cmdline.txt
 ```
 
 If either is missing, re-run `sudo ./deploy/setup.sh` and reboot.

@@ -337,7 +337,7 @@ if [ -f "$CMDLINE" ]; then
     VT_BLACK="0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
     for channel in "vt.default_red" "vt.default_grn" "vt.default_blu"; do
         if ! grep -q "$channel" "$CMDLINE"; then
-            sed -i "s|$| ${channel}=${VT_BLACK}|" "$CMDLINE"
+            sed -i "s|\$| ${channel}=${VT_BLACK}|" "$CMDLINE"
             echo "  Added '$channel' to $CMDLINE"
         fi
     done
