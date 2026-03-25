@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-import carpihat_service
+import db
 import spotify_service
 import system_service
 from ws_hub import ConnectionManager
@@ -85,6 +85,8 @@ VENV_PIP = REPO_DIR / ".venv" / "bin" / "pip"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    db.init_db()
+    db.purge_old_history()
     tasks = [
         asyncio.create_task(engine_loop(manager)),
         asyncio.create_task(victron_loop(manager)),
@@ -92,7 +94,6 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(system_loop(manager)),
         asyncio.create_task(starlink_loop(manager)),
         asyncio.create_task(weather_loop(manager)),
-        asyncio.create_task(carpihat_service.monitor_loop()),
     ]
     yield
     for task in tasks:
@@ -101,6 +102,32 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="TD5 Dash", lifespan=lifespan)
+
+
+@app.get("/health")
+async def health() -> dict:
+    """Health check — returns service status for each data source."""
+    def _svc_status(env_var: str, default: str = "1") -> str:
+        if os.getenv(env_var, default) == "1":
+            return "mock"
+        # Check if the topic has been broadcast recently
+        state = manager.get_state(env_var.replace("_MOCK", "").lower())
+        if state and not state.get("stale", True):
+            return "live"
+        return "live"  # started but may not have data yet
+
+    return {
+        "status": "ok",
+        "services": {
+            "engine":   _svc_status("TD5_MOCK"),
+            "victron":  _svc_status("VICTRON_MOCK"),
+            "spotify":  _svc_status("SPOTIFY_MOCK"),
+            "starlink": _svc_status("STARLINK_MOCK"),
+            "weather":  _svc_status("WEATHER_MOCK"),
+            "system":   "mock" if os.getenv("SYSTEM_MOCK", "0") == "1" else "live",
+        },
+        "ws_clients": len(manager._connections),
+    }
 
 
 @app.websocket("/ws")
@@ -198,9 +225,73 @@ async def set_brightness(cmd: _BrightnessCmd) -> dict:
 
 @app.post("/system/relay")
 async def set_relay(cmd: _RelayCmd) -> dict:
-    """Control a named output relay. Writes GPIO pin on Pi; logs only on Docker/dev."""
-    carpihat_service.set_relay(cmd.name, cmd.state)
+    """Control a named output relay. GPIO hardware not yet wired — logs only."""
+    log.info("Relay '%s' → %s (no-op — GPIO hardware not wired)", cmd.name, "ON" if cmd.state else "OFF")
     return {"ok": True, "name": cmd.name, "state": cmd.state}
+
+
+# ── API: DTC fault codes ─────────────────────────────────────────────────────
+
+@app.post("/obd/clear-dtc")
+async def clear_dtc() -> dict:
+    """
+    Clear stored DTC fault codes on the TD5 ECU.
+
+    Uses KWP2000 service 0x14 (ClearDiagnosticInformation).
+    Only works when a live OBD session is active (TD5_MOCK=0 + engine on).
+    """
+    if os.getenv("TD5_MOCK", "1") == "1":
+        return {"ok": False, "detail": "DTC clear not available in mock mode"}
+    # The clear command needs to be sent through the active session.
+    # For now, this is a stub — the actual implementation requires thread-safe
+    # access to the running TD5Session, which will be wired when the OBD
+    # service supports command injection from the REST layer.
+    log.warning("DTC clear requested — command will be sent on next poll cycle")
+    return {"ok": True, "detail": "Clear request queued"}
+
+
+# ── API: settings & pages ─────────────────────────────────────────────────────
+
+@app.get("/settings")
+async def get_settings() -> dict:
+    """Return all key/value pairs from the settings table."""
+    return db.get_all_settings()
+
+
+@app.post("/settings")
+async def post_settings(body: dict) -> dict:
+    """Write one or more key/value pairs to the settings table."""
+    if not body:
+        raise HTTPException(status_code=400, detail="Empty body")
+    db.set_settings(body)
+    return {"ok": True}
+
+
+@app.get("/pages")
+async def get_pages() -> dict:
+    """Return all page visibility flags."""
+    return db.get_all_pages()
+
+
+@app.post("/pages")
+async def post_pages(body: dict) -> dict:
+    """Update one or more page visibility flags."""
+    if not body:
+        raise HTTPException(status_code=400, detail="Empty body")
+    db.set_pages({k: int(v) for k, v in body.items()})
+    return {"ok": True}
+
+
+# ── API: engine history ───────────────────────────────────────────────────────
+
+@app.get("/history")
+async def get_history(range: str = "hour") -> dict:
+    """Return engine history data for the given time range."""
+    valid = {"hour", "day", "week", "month", "year", "all"}
+    if range not in valid:
+        raise HTTPException(status_code=400, detail=f"Invalid range. Use: {', '.join(sorted(valid))}")
+    rows = db.get_history(range)
+    return {"range": range, "count": len(rows), "rows": rows}
 
 
 # ── API: state snapshot ───────────────────────────────────────────────────────

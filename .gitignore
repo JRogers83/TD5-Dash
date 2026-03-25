@@ -21,6 +21,14 @@ Thumbs.db
 deploy/plymouth/td5-dash/logo.png
 deploy/plymouth/td5-dash/shimmer.png
 
+# SQLite database (created at runtime)
+data/td5dash.db
+data/td5dash.db-wal
+data/td5dash.db-shm
+
+# Diagnostic logs
+data/diag_*.log
+
 # OBD test/sweep tool log files
 tools/td5_test_*.txt
 tools/td5_sweep_*.txt

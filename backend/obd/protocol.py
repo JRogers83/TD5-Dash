@@ -32,6 +32,7 @@ SVC_STOP_DIAG           = 0x20   # StopDiagnosticSession
 SVC_ECU_RESET           = 0x11   # ECUReset
 SVC_SECURITY_ACCESS     = 0x27   # SecurityAccess (seed-key handshake)
 SVC_READ_LOCAL_ID       = 0x21   # ReadDataByLocalIdentifier (live data)
+SVC_CLEAR_DTC           = 0x14   # ClearDiagnosticInformation — clear stored fault codes
 SVC_TESTER_PRESENT      = 0x3E   # TesterPresent — keepalive heartbeat
 
 # Positive response = service_id | 0x40

@@ -47,6 +47,9 @@ _DISCONNECTED: dict = {
 # show a different message from the normal "no active device" state.
 _ERROR: dict = {**_DISCONNECTED, "error": True}
 
+# Module-level state shared between broadcast_loop and save_track
+_like_hold_until: float = 0.0   # suppress liked overwrites until this timestamp
+
 _COMMAND_URLS: dict[str, tuple[str, str]] = {
     "play":  ("PUT",  "https://api.spotify.com/v1/me/player/play"),
     "pause": ("PUT",  "https://api.spotify.com/v1/me/player/pause"),
@@ -91,6 +94,7 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
             await asyncio.sleep(_IDLE_INTERVAL)
         return  # unreachable — satisfies type checkers
 
+    global _like_hold_until
     _liked_track_id: str       = ""
     _liked_status:   bool      = False
     _last_payload:   dict | None = None   # last successful player state
@@ -135,7 +139,14 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
             if r.status_code == 429:
                 retry_after = int(r.headers.get("Retry-After", 10))
                 log.warning("Spotify rate limited — backing off %ds", retry_after)
-                await asyncio.sleep(retry_after)
+                # Continue broadcasting last known data during backoff so the
+                # frontend doesn't flash to disconnected state.
+                if _last_payload is not None:
+                    for _ in range(retry_after):
+                        await manager.broadcast({"type": "spotify", "data": {**_last_payload, "playing": False}})
+                        await asyncio.sleep(1)
+                else:
+                    await asyncio.sleep(retry_after)
                 continue
 
             if r.status_code != 200:
@@ -145,9 +156,20 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
 
             payload = _parse(r.json())
             track_id = payload.get("track_id", "")
+
+            # Like status: check on track change, but suppress overwrites for
+            # 5 seconds after a like action to prevent the API lag from reverting
+            # the optimistic UI update.
+            import time as _time
             if track_id and track_id != _liked_track_id:
                 _liked_track_id = track_id
                 _liked_status   = await check_track_saved(track_id)
+                _like_hold_until = 0  # new track — allow overwrites
+            elif track_id and _time.time() < _like_hold_until:
+                pass  # suppress — keep _liked_status from the like action
+            elif track_id == _liked_track_id:
+                _liked_status = await check_track_saved(track_id)
+
             payload["liked"] = _liked_status
             _last_payload = payload
             await manager.broadcast({"type": "spotify", "data": payload})
@@ -291,7 +313,12 @@ async def check_track_saved(track_id: str) -> bool:
 
 
 async def save_track(track_id: str) -> bool:
-    """Add a track to the user's Liked Songs library."""
+    """Add a track to the user's Liked Songs library.
+
+    After a successful save, the broadcast loop suppresses poll-driven
+    overwrites of liked status for 5 seconds to prevent the API lag from
+    reverting the optimistic UI update.
+    """
     token = await spotify_auth.get_token()
     if token is None:
         return False
@@ -306,6 +333,10 @@ async def save_track(track_id: str) -> bool:
         if r.status_code not in (200, 204):
             log.warning("save_track returned %d: %s", r.status_code, r.text[:300])
             return False
+        # Suppress liked-status poll overwrites for 5 seconds
+        global _like_hold_until
+        import time as _time
+        _like_hold_until = _time.time() + 5.0
         return True
     except Exception as exc:
         log.error("save_track failed: %s", exc)

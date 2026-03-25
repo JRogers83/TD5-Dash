@@ -10,6 +10,7 @@ _MOCK: dict = {
         "external_temp_c": 15,
         "boost_bar": 0.0,
         "throttle_pct": 0,
+        "throttle_raw_pct": 18.1,
         "battery_v": 14.1,
         "road_speed_kph": 0,
         "fuel_temp_c": 35,

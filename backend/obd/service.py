@@ -31,6 +31,16 @@ from .connection import KLineConnection, KLineError
 from . import decoder as D
 from . import protocol as P
 
+# Load throttle calibration from SQLite at import time
+try:
+    import db
+    D.set_throttle_calibration(
+        db.get_float("throttle_idle", 18.0),
+        db.get_float("throttle_wot", 90.0),
+    )
+except Exception:
+    pass  # db not available yet (e.g. during tests) — use defaults
+
 log = logging.getLogger(__name__)
 
 FTDI_URL      = os.getenv("TD5_FTDI_URL",      "ftdi://ftdi:232/1")

@@ -78,6 +78,16 @@ async def _fetch(lat: float, lon: float) -> Optional[dict]:
                 "low_c":        round(day["temperature_2m_min"][i], 1),
             })
 
+        # Get location name: prefer settings DB, fallback to env var
+        location = os.getenv("WEATHER_LOCATION", "")
+        try:
+            import db
+            stored_loc = db.get_setting("weather_location")
+            if stored_loc:
+                location = stored_loc
+        except Exception:
+            pass
+
         return {
             "current": {
                 "temp_c":        round(cur["temperature_2m"],       1),
@@ -86,9 +96,7 @@ async def _fetch(lat: float, lon: float) -> Optional[dict]:
                 "wind_kph":      round(cur["wind_speed_10m"],        1),
             },
             "forecast": forecast,
-            # Pass location through so the frontend can display it.
-            # A future GPS service can populate this with an actual place name.
-            "location": os.getenv("WEATHER_LOCATION", ""),
+            "location": location,
         }
 
     except httpx.HTTPError as exc:

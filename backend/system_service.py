@@ -199,7 +199,7 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
             "brightness":     brightness if brightness >= 0 else None,
             "wifi_connected": wifi,
             "bt_connected":   bt,
-            # CarPiHAT state — updated by carpihat_service.monitor_loop() via shared_state
+            # GPIO state — updated via shared_state (ignition_service in future)
             "override_mode":  shared_state.override_mode,
             "sidelights":     shared_state.sidelights_on,
         }
