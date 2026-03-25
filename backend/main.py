@@ -110,11 +110,13 @@ async def health() -> dict:
     def _svc_status(env_var: str, default: str = "1") -> str:
         if os.getenv(env_var, default) == "1":
             return "mock"
-        # Check if the topic has been broadcast recently
-        state = manager.get_state(env_var.replace("_MOCK", "").lower())
-        if state and not state.get("stale", True):
-            return "live"
-        return "live"  # started but may not have data yet
+        topic = env_var.replace("_MOCK", "").lower()
+        state = manager.get_state(topic)
+        if not state:
+            return "starting"
+        if state.get("stale", False):
+            return "error"
+        return "live"
 
     return {
         "status": "ok",
@@ -285,13 +287,13 @@ async def post_pages(body: dict) -> dict:
 # ── API: engine history ───────────────────────────────────────────────────────
 
 @app.get("/history")
-async def get_history(range: str = "hour") -> dict:
-    """Return engine history data for the given time range."""
+async def get_history(time_range: str = "hour") -> dict:
+    """Return engine history data for the given time range (query param: ?time_range=)."""
     valid = {"hour", "day", "week", "month", "year", "all"}
-    if range not in valid:
+    if time_range not in valid:
         raise HTTPException(status_code=400, detail=f"Invalid range. Use: {', '.join(sorted(valid))}")
-    rows = db.get_history(range)
-    return {"range": range, "count": len(rows), "rows": rows}
+    rows = db.get_history(time_range)
+    return {"range": time_range, "count": len(rows), "rows": rows}
 
 
 # ── API: state snapshot ───────────────────────────────────────────────────────
@@ -363,6 +365,13 @@ async def system_update() -> dict:
     asyncio.create_task(_delayed_restart())
 
     return {"ok": True, "output": git_out, "restarting": True}
+
+
+@app.post("/system/restart")
+async def system_restart() -> dict:
+    """Restart the service without pulling code or updating dependencies."""
+    asyncio.create_task(_delayed_restart())
+    return {"ok": True, "restarting": True}
 
 
 # Static files mount last so /ws, /api/*, /spotify/*, /system/* are matched first.

@@ -47,6 +47,7 @@ FTDI_URL      = os.getenv("TD5_FTDI_URL",      "ftdi://ftdi:232/1")
 POLL_INTERVAL = float(os.getenv("TD5_POLL_INTERVAL", "1.0"))
 RETRY_DELAY_S = 5.0   # seconds to wait before reconnecting after a failure
 FAULT_POLL_INTERVAL_S = 30.0  # read fault codes every N seconds
+HISTORY_WRITE_INTERVAL_S = 10.0  # write to engine_history every N seconds
 
 
 # ── Session-level K-Line operations ───────────────────────────────────────────
@@ -210,6 +211,7 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                     log.debug("Could not read fault codes at session start")
 
                 last_fault_read = time.monotonic()
+                last_history_write = time.monotonic()
                 last_successful_read = time.monotonic()
 
                 while True:
@@ -237,6 +239,7 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
 
                         thr_payload = session.read_local_id_safe(P.PID_THROTTLE)
                         throttle = D.decode_throttle(thr_payload) if thr_payload else None
+                        throttle_raw = D.decode_throttle_raw(thr_payload) if thr_payload else None
 
                         # ── Periodic fault code refresh ──────────────────
                         if time.monotonic() - last_fault_read > FAULT_POLL_INTERVAL_S:
@@ -258,6 +261,7 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                                     "external_temp_c":  ext_temp,
                                     "boost_bar":        boost,
                                     "throttle_pct":     throttle if throttle is not None else 0.0,
+                                    "throttle_raw_pct": throttle_raw,
                                     "battery_v":        battery if battery is not None else 0.0,
                                     "road_speed_kph":   round(speed) if speed is not None else 0,
                                     "fuel_temp_c":      fuel_temp,
@@ -266,6 +270,22 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                             }),
                             loop,
                         )
+
+                        # ── Periodic history write (~10s cadence) ──────
+                        if time.monotonic() - last_history_write >= HISTORY_WRITE_INTERVAL_S:
+                            try:
+                                db.insert_history({
+                                    "rpm":              rpm or 0,
+                                    "road_speed_kph":   speed or 0,
+                                    "coolant_temp_c":   coolant,
+                                    "boost_bar":        boost,
+                                    "throttle_pct":     throttle or 0,
+                                    "battery_v":        battery or 0,
+                                    "fuel_temp_c":      fuel_temp,
+                                })
+                                last_history_write = time.monotonic()
+                            except Exception:
+                                log.debug("Failed to write engine history row")
 
                         time.sleep(POLL_INTERVAL)
 

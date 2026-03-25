@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 import httpx
 
@@ -74,6 +75,7 @@ def _parse(body: dict) -> dict:
     return {
         "connected":     True,
         "playing":       body.get("is_playing", False),
+        "error":         False,
         "track":         item.get("name", ""),
         "artist":        ", ".join(a.get("name", "") for a in artists),
         "album":         (item.get("album") or {}).get("name", ""),
@@ -160,12 +162,12 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
             # Like status: check on track change, but suppress overwrites for
             # 5 seconds after a like action to prevent the API lag from reverting
             # the optimistic UI update.
-            import time as _time
+
             if track_id and track_id != _liked_track_id:
                 _liked_track_id = track_id
                 _liked_status   = await check_track_saved(track_id)
                 _like_hold_until = 0  # new track — allow overwrites
-            elif track_id and _time.time() < _like_hold_until:
+            elif track_id and time.time() < _like_hold_until:
                 pass  # suppress — keep _liked_status from the like action
             elif track_id == _liked_track_id:
                 _liked_status = await check_track_saved(track_id)
@@ -336,7 +338,7 @@ async def save_track(track_id: str) -> bool:
         # Suppress liked-status poll overwrites for 5 seconds
         global _like_hold_until
         import time as _time
-        _like_hold_until = _time.time() + 5.0
+        _like_hold_until = time.time() + 5.0
         return True
     except Exception as exc:
         log.error("save_track failed: %s", exc)

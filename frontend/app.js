@@ -1505,7 +1505,7 @@ function doRestart() {
 }
 
 function _doReboot() {
-  fetch('/system/update', { method: 'POST' }).catch(() => {});
+  fetch('/system/restart', { method: 'POST' }).catch(() => {});
 }
 
 function reimportWeatherLocation() {
@@ -1557,7 +1557,7 @@ async function loadHistory(range) {
   });
 
   try {
-    const r = await fetch(`/history?range=${range}`);
+    const r = await fetch(`/history?time_range=${range}`);
     const d = await r.json();
     const rows = d.rows || [];
     _drawLineChart('chart-speed', rows.map(r => r.speed), '#40c4ff');
