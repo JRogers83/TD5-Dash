@@ -341,7 +341,11 @@ async def _delayed_restart() -> None:
     # In production (Pi): restart via systemd
     # In Docker/dev: systemctl is absent — skip silently
     if subprocess.run(["which", "systemctl"], capture_output=True).returncode == 0:
-        subprocess.Popen(["sudo", "systemctl", "restart", "td5-dash"])
+        # start_new_session=True detaches the child into its own process group
+        # so systemd killing the parent process group doesn't also kill this child
+        # before it can trigger the restart.
+        subprocess.Popen(["sudo", "systemctl", "restart", "td5-dash"],
+                         start_new_session=True)
     else:
         log.info("Update: systemctl not available (Docker/dev) — restart manually")
 
