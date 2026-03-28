@@ -125,15 +125,42 @@ def decode_speed(payload: bytes) -> Optional[float]:
 # [CONFIRMED] pct = (P1 / supply) * 100.  Vehicle: P1=910mV, Supply=5016mV = 18.1%
 # at idle (foot off pedal).  Only responds with engine running.
 
-def decode_throttle(payload: bytes) -> Optional[float]:
+# Throttle calibration values — read from SQLite settings table at startup.
+# decode_throttle_raw returns the raw ratiometric percentage (P1/supply * 100).
+# decode_throttle applies linear calibration: (raw - idle) / (wot - idle) * 100.
+_throttle_idle: float = 18.0   # default — overridden by db.get_float('throttle_idle')
+_throttle_wot:  float = 90.0   # default — overridden by db.get_float('throttle_wot')
+
+
+def set_throttle_calibration(idle: float, wot: float) -> None:
+    """Update throttle calibration values at runtime (called from setup wizard)."""
+    global _throttle_idle, _throttle_wot
+    _throttle_idle = idle
+    _throttle_wot = wot
+
+
+def decode_throttle_raw(payload: bytes) -> Optional[float]:
+    """Decode raw ratiometric throttle percentage (before calibration)."""
     if len(payload) < 10:
         return None
     p1     = ((payload[0] << 8) | payload[1]) / 1000.0   # volts
     supply = ((payload[8] << 8) | payload[9]) / 1000.0   # volts
     if supply < 0.5:
-        return 0.0   # guard against divide-by-zero at startup
+        return 0.0
     pct = (p1 / supply) * 100.0
     return round(min(100.0, max(0.0, pct)), 1)
+
+
+def decode_throttle(payload: bytes) -> Optional[float]:
+    raw = decode_throttle_raw(payload)
+    if raw is None:
+        return None
+    # Apply linear calibration: (raw - idle) / (wot - idle) * 100
+    span = _throttle_wot - _throttle_idle
+    if span < 1.0:
+        return raw  # guard against miscalibration
+    calibrated = (raw - _throttle_idle) / span * 100.0
+    return round(min(100.0, max(0.0, calibrated)), 1)
 
 
 # ── PID 0x20 — Stored fault codes ────────────────────────────────────────────

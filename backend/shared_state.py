@@ -9,8 +9,8 @@ asyncio.run_coroutine_threadsafe for writes, or write only from the async layer)
 
 Currently holds:
   gps_lat / gps_lon    — most recent GPS fix from Starlink (None until first fix)
-  override_mode        — CarPiHAT override switch state (leisure battery bypass)
-  sidelights_on        — CarPiHAT sidelights input state (auto-brightness trigger)
+  override_mode        — override switch state (leisure battery bypass)
+  sidelights_on        — sidelights input state (auto-brightness trigger)
 """
 
 from __future__ import annotations
@@ -19,6 +19,6 @@ from __future__ import annotations
 gps_lat: float | None = None
 gps_lon: float | None = None
 
-# CarPiHAT GPIO state (set by carpihat_service)
+# GPIO state (set by ignition_service / future GPIO service)
 override_mode: bool = False
 sidelights_on: bool = False

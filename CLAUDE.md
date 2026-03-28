@@ -50,6 +50,7 @@ Vanilla HTML/CSS/JS — no framework. The design system is a small set of shared
 | `--c-amber` | `#ffab40` | Warning / caution |
 | `--c-red` | `#ff5252` | Error / critical |
 | `--c-blue` | `#40c4ff` | Cold / informational |
+| `--c-track` | `#242424` | Gauge tracks and progress bars |
 
 ### Core component classes
 
@@ -111,13 +112,13 @@ Each view uses a horizontal flex row (`*-content` class) with `vdivider` element
 Per-topic messages to avoid a monolithic payload and keep views decoupled:
 
 ```json
-{"type": "engine",   "data": {"rpm": 0, "coolant_temp_c": 0, "boost_bar": 0, "throttle_pct": 0, "battery_v": 0, "inlet_air_temp_c": 0, "external_temp_c": 0, "fuel_temp_c": 0, "road_speed_kph": 0, "fault_codes": []}}
+{"type": "engine",   "data": {"rpm": 0, "coolant_temp_c": 0, "boost_bar": 0, "throttle_pct": 0, "throttle_raw_pct": 0, "battery_v": 0, "inlet_air_temp_c": 0, "external_temp_c": 0, "fuel_temp_c": 0, "road_speed_kph": 0, "fault_codes": []}}
 {"type": "victron",  "data": {"soc_pct": 0, "voltage_v": 0, "current_a": 0, "solar_yield_wh": 0, "charge_state": "", "orion_state": "", "orion_input_v": 0}}
 {"type": "spotify",  "data": {"connected": false, "playing": false, "error": false, "track": "", "artist": "", "album": "", "album_art_url": null, "progress_s": 0, "duration_s": 0, "device_name": "", "track_id": "", "liked": false}}
 {"type": "weather",  "data": {"current": {"temp_c": 0, "humidity_pct": 0, "weather_code": 0, "wind_kph": 0}, "forecast": [], "location": "", "stale": false}}
 {"type": "starlink", "data": {"state": "offline", "down_mbps": 0, "up_mbps": 0, "latency_ms": 0, "ping_drop_pct": 0, "obstructed": false, "obstruction_pct": 0, "roaming": false, "uptime_s": 0, "alerts": []}}
 {"type": "gps",      "data": {"lat": 0, "lon": 0, "alt": 0}}
-{"type": "system",   "data": {"brightness": 0, "cpu_temp_c": 0, "cpu_load_pct": 0, "ram_usage_pct": 0, "disk_usage_pct": 0, "uptime_s": 0, "throttled": false, "wifi_connected": false, "bt_connected": false, "override_mode": false}}
+{"type": "system",   "data": {"brightness": 0, "cpu_temp_c": 0, "cpu_load_pct": 0, "ram_usage_pct": 0, "disk_usage_pct": 0, "uptime_s": 0, "throttled": false, "wifi_connected": false, "bt_connected": false, "override_mode": false, "sidelights": false}}
 ```
 
 ---
@@ -127,6 +128,15 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/ws` | WebSocket upgrade |
+| `GET` | `/health` | Health check — per-service status |
+| `GET` | `/settings` | All settings key/value pairs |
+| `POST` | `/settings` | Write settings — `{"key": "value", ...}` |
+| `GET` | `/pages` | Page visibility flags |
+| `POST` | `/pages` | Update page visibility — `{"key": 0\|1, ...}` |
+| `GET` | `/history` | Engine history — `?time_range=hour\|day\|week\|month\|year\|all` |
+| `POST` | `/obd/clear-dtc` | Clear stored DTC fault codes |
+| `GET` | `/api/state` | Full state snapshot for all topics (Home Assistant) |
+| `GET` | `/api/state/{topic}` | Single-topic state snapshot |
 | `POST` | `/spotify/command` | Playback control — `{"action": "play"\|"pause"\|"next"\|"prev"}` |
 | `POST` | `/spotify/like` | Save track to Liked Songs — `{"track_id": "..."}` |
 | `GET` | `/spotify/playlists` | Current user's playlists |
@@ -134,6 +144,8 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 | `POST` | `/spotify/play` | Play a playlist — `{"context_uri": "...", "track_uri": "..."}` |
 | `POST` | `/system/brightness` | Set backlight brightness — `{"value": 0–255}` (writes sysfs on Pi) |
 | `POST` | `/system/relay` | Control a relay — `{"name": "amp", "state": bool}` (GPIO pending CarPiHAT) |
+| `POST` | `/system/update` | OTA update — git pull + pip install + restart |
+| `POST` | `/system/restart` | Restart service only (no code pull) |
 
 ---
 
@@ -156,7 +168,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 | 2 | OBD Integration — TD5 K-Line service | **Complete (vehicle-verified 2026-03-21)** |
 | 3 | Victron, Spotify, Weather, Starlink | **Complete** |
 | 4 | Power System & Vehicle Install | Pending |
-| 5 | Polish | Pending |
+| 5 | Polish | **In Progress** — SQLite persistence, 2D navigation, DTC, throttle calibration, diagnostics, history charts, test suite, OTA update complete; Plymouth splash and boot time optimisation complete from earlier work |
 
 ---
 
@@ -280,7 +292,8 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 
 **New backend services**
 - `system_service.py` — reads real CPU temp (`/sys/class/thermal/thermal_zone0/temp`), backlight brightness (`/sys/class/backlight/*/brightness`), Wi-Fi state (`/sys/class/net/wlan0/operstate`), BT state (`rfkill`); falls back gracefully in Docker; includes `override_mode` and `sidelights` from `shared_state`; replaces permanent `mock_system_loop` (toggle via `SYSTEM_MOCK=1` if needed)
-- `carpihat_service.py` — GPIO skeleton for CarPiHAT PRO 5; documents pin assignments (IN1=ignition, IN2=override, IN3=sidelights, OUT1=amp relay); implements ignition-off → 30s grace → `systemctl poweroff`; updates `shared_state`; `set_relay(name, state)` called by `/system/relay` endpoint; RPi.GPIO optional (stub mode in Docker)
+- `carpihat_service.py` — GPIO skeleton for CarPiHAT PRO 5; documents pin assignments (IN1=ignition, IN2=override, IN3=sidelights, OUT1=amp relay); retained as reference only — not imported or used at runtime. Replaced by `ignition_service.py` for the dual-relay power system
+- `ignition_service.py` — GPIO ignition sense + graceful shutdown stub for dual-relay power system; not yet wired into `main.py` (pending hardware)
 - `shared_state.py` — module-level shared state between services: `gps_lat`, `gps_lon` (from Starlink GPS); `override_mode`, `sidelights_on` (from CarPiHAT)
 
 **GPS → weather integration**
@@ -306,6 +319,52 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 
 ---
 
+## Next-Phase Implementation (March 2026)
+
+**Configuration architecture**
+- SQLite database (`db.py`) with `settings`, `pages`, and `engine_history` tables; REST endpoints (`GET/POST /settings`, `GET/POST /pages`, `GET /history`); `DEV_MODE` support for development overrides
+
+**Two-dimensional navigation**
+- Vertical layers within views: Engine (4 layers), Settings (4 layers); axis-locked touch gestures prevent diagonal swipes; `navigateTo()` API for programmatic view/layer transitions
+
+**CarPiHAT deprecation**
+- Removed all runtime references to `carpihat_service.py`; created `ignition_service.py` stub for dual-relay power system (not yet wired into `main.py` — pending hardware)
+
+**Test framework**
+- 99 pytest tests covering decoder vectors, protocol checksums, WS hub connection management, mock schema validation; `pytest.ini` configuration; `tests/` directory with `conftest.py`, `test_decoder.py`, `test_protocol.py`, `test_ws_hub.py`, `test_mock_service.py`
+
+**DTC fault codes**
+- `dtc_lookup.py` — TD5 DTC fault code dictionary; faults tile replaces fuel temp on Engine layer 0; DTC detail on Engine layer 1 with clear button (`POST /obd/clear-dtc`); Raw Data on Engine layer 3
+
+**Throttle calibration**
+- Linear mapping in decoder; Setup wizard with Set Idle / WOT buttons persisted to SQLite settings
+
+**WebSocket reconnect resync**
+- Cached state sent on new WebSocket connection so late-joining clients receive current data immediately
+
+**Spotify fixes**
+- Backoff broadcasts during HTTP 429 rate limiting; like button 5s hold suppression to prevent duplicate API calls
+
+**Health check**
+- `/health` endpoint returns per-service status; `docker-compose.yml` healthcheck configured; Diagnostics screen on Settings layer 3
+
+**Trip computer**
+- In-memory session peaks/averages displayed on Engine layer 1
+
+**Coolant trend indicator**
+- Dynamic dot/arrow with colour thresholds showing coolant temperature trend direction
+
+**Engine history**
+- SQLite `engine_history` table with periodic inserts; `/history` endpoint with `?time_range=hour|day|week|month|year|all`; Canvas line charts on Engine layer 2
+
+**Reverse geocoding**
+- Nominatim integration in Starlink service; location name persisted to settings DB
+
+**OTA update**
+- `POST /system/update` (git pull + pip install + restart) and `POST /system/restart` (restart service only) endpoints; frontend Update button on Settings view
+
+---
+
 ## Project Structure
 
 ```
@@ -328,10 +387,12 @@ TD5-Dash/
 ├── backend/
 │   ├── main.py             # FastAPI app — lifespan tasks, WS endpoint, REST endpoints
 │   ├── ws_hub.py           # WebSocket connection manager
+│   ├── db.py               # SQLite settings/pages/engine_history database
 │   ├── mock_service.py     # Static mock data for all six topics
 │   ├── shared_state.py     # Module-level shared state (GPS coords, CarPiHAT state)
 │   ├── system_service.py   # Real CPU temp, backlight, Wi-Fi/BT monitoring
-│   ├── carpihat_service.py # GPIO skeleton — ignition/shutdown/relay (CarPiHAT PRO 5)
+│   ├── carpihat_service.py # GPIO skeleton — retained as reference; not imported or used at runtime
+│   ├── ignition_service.py # GPIO ignition sense + graceful shutdown (stub until hardware)
 │   ├── spotify_auth.py     # OAuth token manager (refresh + in-memory cache)
 │   ├── spotify_service.py  # Spotify Web API polling + playlist/command/like
 │   ├── weather_service.py  # Open-Meteo polling + stale detection (uses GPS coords)
@@ -341,6 +402,7 @@ TD5-Dash/
 │   │   ├── connection.py   # PyFtdi K-Line connection + fast-init
 │   │   ├── protocol.py     # KWP2000 frame builder + TD5 seed-key algorithm
 │   │   ├── decoder.py      # Live data frame parser
+│   │   ├── dtc_lookup.py   # TD5 DTC fault code dictionary
 │   │   └── service.py      # Session management + poll loop
 │   ├── victron/            # Victron BLE service
 │   │   ├── __init__.py
@@ -356,6 +418,14 @@ TD5-Dash/
 ├── tools/
 │   ├── spotify_auth_setup.py  # One-time OAuth helper — run locally
 │   └── td5_diag.py            # TD5 ECU diagnostic tool — progressive K-Line verification
+├── data/                   # Runtime SQLite database (gitignored, created at startup)
+├── pytest.ini              # Pytest configuration
+├── tests/
+│   ├── conftest.py
+│   ├── test_decoder.py
+│   ├── test_protocol.py
+│   ├── test_ws_hub.py
+│   └── test_mock_service.py
 └── deploy/
     ├── setup.sh            # Pi first-time setup script (run as root)
     ├── td5-dash.service    # systemd unit template

@@ -46,6 +46,16 @@ class ConnectionManager:
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
         self._connections.append(ws)
+        # Resync: send all cached topic payloads to the new client immediately
+        # so it doesn't have to wait for each service's next broadcast cycle.
+        for topic, entry in self._state.items():
+            try:
+                await ws.send_text(json.dumps({
+                    "type": topic,
+                    "data": entry["data"],
+                }))
+            except Exception:
+                break
 
     def disconnect(self, ws: WebSocket) -> None:
         if ws in self._connections:

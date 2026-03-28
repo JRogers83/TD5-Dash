@@ -1,10 +1,10 @@
 # Defender TD5 Dash Display
-**Project Specification — Rev 3.0**
+**Project Specification — Rev 3.1**
 Vehicle: Land Rover Defender TD5 (factory)
-Date: 18 March 2026
-Status: Software complete to Phase 3 with ongoing UI polish — awaiting hardware for vehicle install
+Date: 25 March 2026
+Status: Phases 1–3 complete, Phase 5 in progress — awaiting hardware for vehicle install
 
-> **Note:** This document was written during Phase 0 planning. The software has since progressed through Phases 1–3, plus additional Polish/UI work. Phase 4 (power system + vehicle install) is pending. Phases 4–5 completion awaits hardware. See the build phases table below for current status and see `README.md` for setup and development instructions.
+> **Note:** This document was written during Phase 0 planning. The software has since progressed through Phases 1–3 plus extensive Phase 5 work (2D navigation, SQLite persistence, DTC fault codes, diagnostics, engine history, test suite, OTA updates). Phase 4 (power system + vehicle install) is pending hardware. See the build phases table below for current status and see `README.md` for setup and development instructions.
 
 ---
 
@@ -207,10 +207,10 @@ Display PCB at front of pod, viewable area aligned with fascia opening via 3D-pr
 |-------|-------------|--------|
 | 0 | **OBD Proof of Concept** — VAG KKL cable + laptop + pyTD5Tester. Verify K-Line handshake and live data. | Complete |
 | 1 | **Bench Prototype** — FastAPI backend, WebSocket hub, mock data service, five-view kiosk UI scaffold, Docker dev environment. | Complete |
-| 2 | **OBD Integration** — TD5 K-Line service (`backend/obd/`). Fast-init, seed-key auth, cyclic PID polling. | Complete (untested on vehicle) |
+| 2 | **OBD Integration** — TD5 K-Line service (`backend/obd/`). Fast-init, seed-key auth, cyclic PID polling. | Complete (vehicle-verified 2026-03-21) |
 | 3 | **Victron, Spotify, Weather, Starlink** — Victron BLE service, Spotify Web API + Connect (Raspotify), Open-Meteo weather, Starlink Mini gRPC, playlist browser. | Complete (plus ongoing UI polish) |
 | 4 | **Power System & Vehicle Install** — CarPiHAT PRO 5 (or DIY). Override switch. MUD Mini Pod + 3D-printed bezel. Cable routing. | Pending — Power system hardware TBD: CarPiHAT PRO 5 out of stock, DIY discrete power (buck converter + optocouplers) identified as fallback |
-| 5 | **Polish** — Splash screen, gauge calibration, day/night brightness, boot time optimisation, stress testing. | Pending — Plymouth splash screen complete; sidelights auto day/night switch complete |
+| 5 | **Polish** — Splash screen, gauge calibration, day/night brightness, boot time optimisation, stress testing. | In Progress — Plymouth splash, sidelights auto day/night, 2D navigation (4 engine layers + 4 settings layers), SQLite persistence (settings/pages/history), DTC fault codes + lookup, throttle calibration wizard, diagnostics screen, engine history charts, trip computer, coolant trend indicator, test suite (99 tests), reverse geocoding, OTA update, WebSocket reconnect resync, health check endpoint |
 
 ---
 

@@ -153,6 +153,55 @@ function setStatDot(id, colorCls) {
   document.getElementById(id).className = `status-dot ${colorCls}`;
 }
 
+// ── Coolant trend indicator ─────────────────────
+// Replaces the static dot with a dynamic shape + colour.
+const COOLANT_NORMAL_MAX     = 95;    // green up to this
+const COOLANT_WARNING_THRESH = 105;   // amber above this
+const COOLANT_TREND_SAMPLES  = 5;     // readings for trend calculation
+
+const _coolantHistory = [];
+
+function _coolantTrend(current) {
+  _coolantHistory.push(current);
+  if (_coolantHistory.length > COOLANT_TREND_SAMPLES) _coolantHistory.shift();
+
+  // Trend direction
+  let shape = 'dot';  // stable
+  if (_coolantHistory.length >= 3) {
+    const first = _coolantHistory[0];
+    const last = _coolantHistory[_coolantHistory.length - 1];
+    const delta = last - first;
+    if (delta > 1.5) shape = 'up';
+    else if (delta < -1.5) shape = 'down';
+  }
+
+  // Colour: green (normal), amber (warming/approaching), red (hot & rising)
+  let colour = 'on';  // green
+  if (current < 60) {
+    colour = 'blue';
+  } else if (current >= COOLANT_WARNING_THRESH) {
+    colour = shape === 'up' ? 'red' : 'warn';
+  } else if (current >= COOLANT_NORMAL_MAX) {
+    colour = 'warn';
+  }
+
+  return { shape, colour };
+}
+
+function _setCoolantIndicator(temp) {
+  const { shape, colour } = _coolantTrend(temp);
+  const el = document.getElementById('dot-coolant');
+  el.className = `status-dot ${colour}`;
+  // Shape: modify innerHTML for arrows
+  if (shape === 'up') {
+    el.innerHTML = '<span class="trend-arrow">&#9650;</span>';
+  } else if (shape === 'down') {
+    el.innerHTML = '<span class="trend-arrow">&#9660;</span>';
+  } else {
+    el.innerHTML = '';
+  }
+}
+
 // ── Engine data handler ────────────────────────
 function handleEngine(d) {
   rpmGauge.value      = d.rpm;
@@ -162,12 +211,22 @@ function handleEngine(d) {
   document.getElementById('txt-battery').textContent   = `${d.battery_v.toFixed(1)} V`;
   document.getElementById('txt-coolant').textContent   = `${d.coolant_temp_c} °C`;
   document.getElementById('txt-air-temp').textContent  = `${d.inlet_air_temp_c} °C`;
-  document.getElementById('txt-fuel-temp').textContent = `${d.fuel_temp_c} °C`;
+
+  // Faults tile
+  const faultCount = (d.fault_codes || []).length;
+  document.getElementById('txt-faults').textContent = faultCount;
+  setStatDot('dot-faults', faultCount > 0 ? 'red' : 'on');
 
   setStatDot('dot-battery',  batteryColor(d.battery_v));
-  setStatDot('dot-coolant',  coolantColor(d.coolant_temp_c));
+  _setCoolantIndicator(d.coolant_temp_c);
   setStatDot('dot-air-temp', airTempColor(d.inlet_air_temp_c));
-  setStatDot('dot-fuel-temp', fuelTempColor(d.fuel_temp_c));
+
+  // Update DTC detail (Engine layer 1), Raw Data (Engine layer 3), trip, and calibration
+  _updateDTCList(d.fault_codes);
+  _updateRawData(d);
+  _updateThrottleRaw(d.throttle_raw_pct);
+  _trip.update(d);
+  _trip.render();
 }
 
 // ── Spotify data handler ───────────────────────
@@ -757,7 +816,7 @@ function adjustBrightness(which, delta) {
 }
 
 // Relay (amplifier) — state persisted in localStorage
-// GPIO wiring pending CarPiHAT PRO 5 installation.
+// GPIO wiring pending hardware build.
 const _relayState = {};
 
 function _loadRelayState(name) {
@@ -826,76 +885,228 @@ async function triggerUpdate() {
   setTimeout(_resetBtn, 30_000);
 }
 
-// ── View carousel ──────────────────────────────
-// Rather than translating one wide strip (which makes wrap transitions slide
-// across all views), each view is positioned individually.  goToView slides
-// the outgoing view out and the incoming view in from the correct edge, then
-// parks the outgoing view off-screen.  Wrapping looks identical to any other
-// transition because the animation only ever moves two views by one step.
+// ── 2D Navigation System ──────────────────────────
+// Horizontal (views): swipe left/right, wraps around
+// Vertical (layers): swipe up/down within a view
+// Axis locked after ~15px of movement; no diagonal navigation.
 
-const VIEW_COUNT = 5;
-const SLIDE_MS   = 300;
-const SLIDE_EASE = `transform ${SLIDE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+const NAV = (() => {
+  const SLIDE_MS = 300;
+  const EASE = `transform ${SLIDE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+  const SWIPE_MIN = 40;
+  const LOCK_PX = 15;
 
-let currentView = 0;
-let isAnimating = false;
+  let viewCount = 0;
+  let curView = 0;
+  let curLayer = [];       // per-view current layer index (into enabledLayers)
+  let enabledLayers = [];  // per-view: sorted array of enabled layer DOM indices
+  let animating = false;
 
-const viewEls = Array.from(document.querySelectorAll('.view'));
+  let viewEls = [];
+  let layerEls = [];       // layerEls[viewIdx] = array of layer elements
 
-// Initialise: show view 0, park all others out of sight
-viewEls.forEach((v, i) => {
-  v.style.transition = 'none';
-  v.style.transform  = i === 0 ? 'translateX(0)' : 'translateX(9999px)';
-});
+  // Touch state
+  let tx0 = 0, ty0 = 0;
+  let axis = null;
 
-function goToView(n) {
-  if (isAnimating) return;
-  const next = ((n % VIEW_COUNT) + VIEW_COUNT) % VIEW_COUNT;
-  if (next === currentView) return;
+  function init(pageFlags) {
+    viewEls = Array.from(document.querySelectorAll('.view'));
+    viewCount = viewEls.length;
 
-  isAnimating = true;
+    layerEls = viewEls.map(v => Array.from(v.querySelectorAll('.layer')));
 
-  // dir: +1 = next view enters from the right (swipe left / forward)
-  //      -1 = next view enters from the left  (swipe right / backward)
-  const dir    = n > currentView ? 1 : -1;
-  const currEl = viewEls[currentView];
-  const nextEl = viewEls[next];
+    // Build enabled layer arrays per view
+    enabledLayers = layerEls.map(layers => {
+      const enabled = [];
+      layers.forEach((el, idx) => {
+        const page = el.dataset.page;
+        if (!page || pageFlags[page]) {
+          enabled.push(idx);
+        }
+      });
+      return enabled;
+    });
 
-  // Place incoming view at the correct off-screen edge, without animating
-  nextEl.style.transition = 'none';
-  nextEl.style.transform  = `translateX(${dir * 1280}px)`;
-  nextEl.getBoundingClientRect();   // force reflow before re-enabling transition
+    curLayer = enabledLayers.map(() => 0);
 
-  // Slide both views simultaneously
-  nextEl.style.transition = SLIDE_EASE;
-  currEl.style.transition = SLIDE_EASE;
-  nextEl.style.transform  = 'translateX(0)';
-  currEl.style.transform  = `translateX(${-dir * 1280}px)`;
+    // Position views and layers
+    viewEls.forEach((v, vi) => {
+      v.style.transition = 'none';
+      v.style.transform = vi === 0 ? 'translateX(0)' : 'translateX(9999px)';
+    });
+    layerEls.forEach(layers => {
+      layers.forEach((l, li) => {
+        l.style.transition = 'none';
+        l.style.transform = li === 0 ? 'translateY(0)' : 'translateY(9999px)';
+      });
+    });
 
-  currentView = next;
+    // Touch handlers
+    const el = document.getElementById('carousel');
+    el.addEventListener('touchstart', _onStart, { passive: true });
+    el.addEventListener('touchmove', _onMove, { passive: true });
+    el.addEventListener('touchend', _onEnd, { passive: true });
 
-  // After the animation park the outgoing view and clear the guard
-  const leaving = currEl;
-  setTimeout(() => {
-    leaving.style.transition = 'none';
-    leaving.style.transform  = 'translateX(9999px)';
-    isAnimating = false;
-  }, SLIDE_MS);
-}
+    _updateIndicator();
+  }
 
-// Touch swipe
-let touchStartX = 0;
-const carousel = document.getElementById('carousel');
+  function _onStart(e) {
+    tx0 = e.touches[0].clientX;
+    ty0 = e.touches[0].clientY;
+    axis = null;
+  }
 
-carousel.addEventListener('touchstart', e => {
-  touchStartX = e.touches[0].clientX;
-}, { passive: true });
+  function _onMove(e) {
+    if (axis) return;
+    const dx = Math.abs(e.touches[0].clientX - tx0);
+    const dy = Math.abs(e.touches[0].clientY - ty0);
+    if (dx > LOCK_PX || dy > LOCK_PX) {
+      axis = dx > dy ? 'x' : 'y';
+    }
+  }
 
-carousel.addEventListener('touchend', e => {
-  if (_browseOpen) return;   // scrolling inside the browse panel must not swipe views
-  const dx = touchStartX - e.changedTouches[0].clientX;
-  if (Math.abs(dx) > 40) goToView(dx > 0 ? currentView + 1 : currentView - 1);
-}, { passive: true });
+  function _onEnd(e) {
+    if (_browseOpen) return;
+    const dx = tx0 - e.changedTouches[0].clientX;
+    const dy = ty0 - e.changedTouches[0].clientY;
+
+    if (!axis) {
+      // No axis locked during move — determine from final delta
+      if (Math.abs(dx) < SWIPE_MIN && Math.abs(dy) < SWIPE_MIN) return;
+      axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    }
+
+    if (axis === 'x' && Math.abs(dx) > SWIPE_MIN) {
+      goView(dx > 0 ? curView + 1 : curView - 1);
+    } else if (axis === 'y' && Math.abs(dy) > SWIPE_MIN) {
+      _stepLayer(dy > 0 ? 1 : -1);
+    }
+    axis = null;
+  }
+
+  // ── Horizontal navigation (views) ─────────────
+  function goView(n) {
+    if (animating) return;
+    const next = ((n % viewCount) + viewCount) % viewCount;
+    if (next === curView) return;
+
+    animating = true;
+    const dir = n > curView ? 1 : -1;
+
+    // Reset current view to layer 0 before leaving
+    const curLayerIdx = enabledLayers[curView][curLayer[curView]];
+    if (curLayerIdx !== 0) {
+      layerEls[curView].forEach((l, li) => {
+        l.style.transition = 'none';
+        l.style.transform = li === 0 ? 'translateY(0)' : 'translateY(9999px)';
+      });
+      curLayer[curView] = 0;
+    }
+
+    const currEl = viewEls[curView];
+    const nextEl = viewEls[next];
+
+    nextEl.style.transition = 'none';
+    nextEl.style.transform = `translateX(${dir * 1280}px)`;
+    nextEl.getBoundingClientRect();
+
+    nextEl.style.transition = EASE;
+    currEl.style.transition = EASE;
+    nextEl.style.transform = 'translateX(0)';
+    currEl.style.transform = `translateX(${-dir * 1280}px)`;
+
+    curView = next;
+    _updateIndicator();
+
+    const leaving = currEl;
+    setTimeout(() => {
+      leaving.style.transition = 'none';
+      leaving.style.transform = 'translateX(9999px)';
+      animating = false;
+    }, SLIDE_MS);
+  }
+
+  // ── Vertical navigation (layers) ──────────────
+  function _stepLayer(delta) {
+    const enabled = enabledLayers[curView];
+    if (enabled.length <= 1) return;
+
+    const nextPos = curLayer[curView] + delta;
+    if (nextPos < 0 || nextPos >= enabled.length) return;
+
+    _goToLayerIdx(enabled[nextPos], delta);
+  }
+
+  function _goToLayerIdx(targetLayerDomIdx, dir) {
+    if (animating) return;
+    const currentLayerDomIdx = enabledLayers[curView][curLayer[curView]];
+    if (targetLayerDomIdx === currentLayerDomIdx) return;
+
+    if (!dir) dir = targetLayerDomIdx > currentLayerDomIdx ? 1 : -1;
+
+    animating = true;
+
+    const currEl = layerEls[curView][currentLayerDomIdx];
+    const nextEl = layerEls[curView][targetLayerDomIdx];
+
+    nextEl.style.transition = 'none';
+    nextEl.style.transform = `translateY(${dir * 400}px)`;
+    nextEl.getBoundingClientRect();
+
+    nextEl.style.transition = EASE;
+    currEl.style.transition = EASE;
+    nextEl.style.transform = 'translateY(0)';
+    currEl.style.transform = `translateY(${-dir * 400}px)`;
+
+    // Update curLayer to the position in enabled array
+    const enabled = enabledLayers[curView];
+    curLayer[curView] = enabled.indexOf(targetLayerDomIdx);
+    _updateIndicator();
+
+    const leaving = currEl;
+    setTimeout(() => {
+      leaving.style.transition = 'none';
+      leaving.style.transform = 'translateY(9999px)';
+      animating = false;
+    }, SLIDE_MS);
+  }
+
+  // ── Imperative navigation API ─────────────────
+  function navigateTo(viewIdx, layerDomIdx) {
+    layerDomIdx = layerDomIdx || 0;
+
+    if (viewIdx !== curView) {
+      goView(viewIdx);
+      if (layerDomIdx > 0) {
+        setTimeout(() => {
+          const enabled = enabledLayers[viewIdx];
+          if (enabled.includes(layerDomIdx)) {
+            _goToLayerIdx(layerDomIdx);
+          }
+        }, SLIDE_MS + 50);
+      }
+    } else {
+      const enabled = enabledLayers[viewIdx];
+      if (enabled.includes(layerDomIdx)) {
+        _goToLayerIdx(layerDomIdx);
+      }
+    }
+  }
+
+  function _updateIndicator() {
+    // No-op — nav dots removed per user preference
+  }
+
+  return {
+    init,
+    goView,
+    navigateTo,
+    get currentView() { return curView; },
+    get currentLayerDomIdx() {
+      return enabledLayers[curView]?.[curLayer[curView]] ?? 0;
+    },
+  };
+})();
 
 // ── Spotify playlist browser ───────────────────
 // State: 'playlists' shows the playlist grid; 'tracks' shows the track list
@@ -1061,6 +1272,322 @@ document.getElementById('sp-play').addEventListener('click', () =>
   _spotifyCmd(_spPlaying ? 'pause' : 'play')
 );
 
+// ── Faults tile navigation ──────────────────────
+document.getElementById('tile-faults').addEventListener('click', () => {
+  NAV.navigateTo(0, 1);  // Engine view, layer 1 (Engine Detail)
+});
+
+// ── DTC detail (Engine layer 1) ─────────────────
+// Known TD5 DTC descriptions (subset — unknown codes show hex)
+const _DTC_TABLE = {
+  0x0263: 'Injector 1 open', 0x0266: 'Injector 2 open', 0x0269: 'Injector 3 open',
+  0x026C: 'Injector 4 open', 0x026F: 'Injector 5 open',
+  0x0380: 'Glow plug 1', 0x0381: 'Glow plug 2', 0x0382: 'Glow plug 3',
+  0x0383: 'Glow plug 4', 0x0384: 'Glow plug 5',
+  0x0100: 'MAF sensor', 0x0105: 'Inlet air temp', 0x0110: 'Coolant temp high',
+  0x0115: 'Coolant temp low', 0x0120: 'Throttle position', 0x0235: 'Boost sensor',
+  0x0400: 'EGR fault', 0x0500: 'Speed sensor', 0x0560: 'System voltage',
+  0x0340: 'Crank sensor', 0x0341: 'Cam sensor',
+};
+
+function _dtcDesc(code) {
+  return _DTC_TABLE[code] || `Unknown (0x${code.toString(16).toUpperCase().padStart(4, '0')})`;
+}
+
+function _updateDTCList(faultCodes) {
+  const list = document.getElementById('dtc-list');
+  if (!faultCodes || faultCodes.length === 0) {
+    list.innerHTML = '<div class="dtc-none">No faults stored</div>';
+    return;
+  }
+  list.innerHTML = faultCodes.map(code => {
+    const hex = code.toString(16).toUpperCase().padStart(4, '0');
+    return `<div class="dtc-row">
+      <span class="dtc-code">${hex}</span>
+      <span class="dtc-desc">${_dtcDesc(code)}</span>
+    </div>`;
+  }).join('');
+}
+
+function clearDTC() {
+  document.getElementById('dtc-clear-confirm').style.display = 'flex';
+}
+
+function cancelClearDTC() {
+  document.getElementById('dtc-clear-confirm').style.display = 'none';
+}
+
+async function confirmClearDTC() {
+  document.getElementById('dtc-clear-confirm').style.display = 'none';
+  const lbl = document.getElementById('lbl-clear-dtc');
+  lbl.textContent = 'Clearing...';
+  try {
+    const r = await fetch('/obd/clear-dtc', { method: 'POST' });
+    const d = await r.json();
+    lbl.textContent = d.ok ? 'Cleared' : (d.detail || 'Failed');
+  } catch (_) {
+    lbl.textContent = 'Error';
+  }
+  setTimeout(() => { lbl.textContent = 'Clear Faults'; }, 3000);
+}
+
+// ── Trip computer (in-memory session data) ──────
+const _trip = {
+  peakRpm: 0,
+  peakBoost: 0,
+  peakCoolant: 0,
+  speedSum: 0,
+  speedCount: 0,
+  startTime: Date.now(),
+
+  update(d) {
+    if (d.rpm > this.peakRpm) this.peakRpm = d.rpm;
+    if (d.boost_bar > this.peakBoost) this.peakBoost = d.boost_bar;
+    if (d.coolant_temp_c > this.peakCoolant) this.peakCoolant = d.coolant_temp_c;
+    if (d.road_speed_kph > 0) {
+      this.speedSum += d.road_speed_kph;
+      this.speedCount++;
+    }
+  },
+
+  render() {
+    const s = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    s('txt-trip-peak-rpm', this.peakRpm > 0 ? `${Math.round(this.peakRpm)} RPM` : '—');
+    s('txt-trip-peak-boost', this.peakBoost > 0 ? `${this.peakBoost.toFixed(2)} bar` : '—');
+    s('txt-trip-peak-coolant', this.peakCoolant > 0 ? `${Math.round(this.peakCoolant)} °C` : '—');
+    s('txt-trip-avg-speed', this.speedCount > 0
+      ? `${Math.round(this.speedSum / this.speedCount)} kph` : '—');
+    const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+    s('txt-trip-time', formatUptime(elapsed));
+  },
+
+  reset() {
+    this.peakRpm = 0;
+    this.peakBoost = 0;
+    this.peakCoolant = 0;
+    this.speedSum = 0;
+    this.speedCount = 0;
+    this.startTime = Date.now();
+    this.render();
+  },
+};
+
+function resetTrip() {
+  _trip.reset();
+}
+
+// ── Throttle calibration (Setup wizard) ─────────
+let _lastThrottleRaw = null;
+
+function _updateThrottleRaw(raw) {
+  _lastThrottleRaw = raw;
+  const el = document.getElementById('throttle-raw-val');
+  if (el) el.textContent = raw != null ? `${raw.toFixed(1)} %` : '— %';
+}
+
+async function setThrottleIdle() {
+  if (_lastThrottleRaw == null) return;
+  await fetch('/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ throttle_idle: _lastThrottleRaw.toString() }),
+  });
+  const el = document.getElementById('throttle-cal-idle');
+  if (el) el.textContent = _lastThrottleRaw.toFixed(1);
+}
+
+async function setThrottleWOT() {
+  if (_lastThrottleRaw == null) return;
+  await fetch('/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ throttle_wot: _lastThrottleRaw.toString() }),
+  });
+  const el = document.getElementById('throttle-cal-wot');
+  if (el) el.textContent = _lastThrottleRaw.toFixed(1);
+}
+
+// ── Raw data handler (Engine layer 3) ───────────
+function _updateRawData(d) {
+  const s = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  s('raw-rpm',      d.rpm != null ? `${d.rpm} RPM` : '—');
+  s('raw-battery',  d.battery_v != null ? `${d.battery_v.toFixed(2)} V` : '—');
+  s('raw-speed',    d.road_speed_kph != null ? `${d.road_speed_kph} kph` : '—');
+  s('raw-coolant',  d.coolant_temp_c != null ? `${d.coolant_temp_c} °C` : '—');
+  s('raw-air',      d.inlet_air_temp_c != null ? `${d.inlet_air_temp_c} °C` : '—');
+  s('raw-ext',      d.external_temp_c != null ? `${d.external_temp_c} °C` : '—');
+  s('raw-fuel',     d.fuel_temp_c != null ? `${d.fuel_temp_c} °C` : '—');
+  s('raw-boost',    d.boost_bar != null ? `${d.boost_bar.toFixed(3)} bar` : '—');
+  s('raw-throttle', d.throttle_pct != null ? `${d.throttle_pct.toFixed(1)} %` : '—');
+  s('raw-faults',   (d.fault_codes || []).length.toString());
+}
+
+// ── Pages screen ────────────────────────────────
+// Single screen with all toggles. Restart button appears on any change.
+
+const _PAGES_TOGGLES = [
+  { key: 'engine_detail', label: 'Engine Detail', desc: 'DTC fault list & trip computer' },
+  { key: 'engine_stats',  label: 'Engine Stats',  desc: 'Session history charts' },
+  { key: 'engine_raw',    label: 'Raw Data',       desc: 'All PID values' },
+  { key: 'settings_diagnostics', label: 'Diagnostics', desc: 'Service health & OBD tests' },
+];
+
+let _pagesOriginal = {};
+let _pagesCurrent = {};
+
+function _pagesInit(pageFlags) {
+  _pagesOriginal = { ...pageFlags };
+  _pagesCurrent = { ...pageFlags };
+  _pagesRender();
+}
+
+function _pagesRender() {
+  const container = document.getElementById('pages-toggles');
+  container.innerHTML = _PAGES_TOGGLES.map(t => {
+    const checked = _pagesCurrent[t.key] ? 'checked' : '';
+    return `<div class="pages-toggle-row" data-page-key="${t.key}">
+      <div class="pages-toggle-info">
+        <div class="pages-toggle-label">${t.label}</div>
+        <div class="pages-toggle-desc">${t.desc}</div>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="pages-cb-${t.key}" ${checked}>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>`;
+  }).join('');
+
+  // Tap anywhere in the row toggles the checkbox
+  container.querySelectorAll('.pages-toggle-row').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('.toggle-switch')) return; // let the checkbox handle itself
+      const key = row.dataset.pageKey;
+      const cb = document.getElementById('pages-cb-' + key);
+      cb.checked = !cb.checked;
+      _pagesToggle(key, cb.checked);
+    });
+    // Also wire up the checkbox change event
+    const key = row.dataset.pageKey;
+    document.getElementById('pages-cb-' + key).addEventListener('change', function() {
+      _pagesToggle(key, this.checked);
+    });
+  });
+}
+
+function _pagesToggle(key, enabled) {
+  _pagesCurrent[key] = enabled ? 1 : 0;
+  fetch('/pages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [key]: _pagesCurrent[key] }),
+  }).catch(() => {});
+  const changed = _PAGES_TOGGLES.some(t => _pagesCurrent[t.key] !== _pagesOriginal[t.key]);
+  document.getElementById('pages-changed-msg').style.visibility = changed ? 'visible' : 'hidden';
+  document.getElementById('pages-restart-btn').disabled = !changed;
+}
+
+function pagesRestart() {
+  _doReboot();
+}
+
+// ── Setup wizard ────────────────────────────────
+
+function confirmRestart() {
+  document.getElementById('restart-confirm').style.display = 'flex';
+}
+
+function cancelRestart() {
+  document.getElementById('restart-confirm').style.display = 'none';
+}
+
+function doRestart() {
+  _doReboot();
+}
+
+function _doReboot() {
+  fetch('/system/restart', { method: 'POST' }).catch(() => {});
+}
+
+function reimportWeatherLocation() {
+  // This will be fully implemented when the backend supports reading .env
+  // For now, just show a brief confirmation
+  fetch('/settings').then(r => r.json()).then(settings => {
+    alert('Weather location: ' + (settings.weather_location || 'unknown'));
+  }).catch(() => {});
+}
+
+// ── Engine Stats charts ─────────────────────────
+function _drawLineChart(canvasId, data, color) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !data.length) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width = canvas.clientWidth;
+  const h = canvas.height = canvas.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+
+  const vals = data.filter(v => v != null);
+  if (vals.length < 2) return;
+
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min || 1;
+  const pad = 4;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < vals.length; i++) {
+    const x = pad + (i / (vals.length - 1)) * (w - pad * 2);
+    const y = h - pad - ((vals[i] - min) / range) * (h - pad * 2);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Min/max labels
+  ctx.fillStyle = '#666';
+  ctx.font = '11px system-ui';
+  ctx.fillText(max.toFixed(0), 4, 14);
+  ctx.fillText(min.toFixed(0), 4, h - 4);
+}
+
+async function loadHistory(range) {
+  // Update active button
+  document.querySelectorAll('.stats-range-btn').forEach(b => {
+    b.classList.toggle('stats-range-btn--active', b.dataset.range === range);
+  });
+
+  try {
+    const r = await fetch(`/history?time_range=${range}`);
+    const d = await r.json();
+    const rows = d.rows || [];
+    _drawLineChart('chart-speed', rows.map(r => r.speed), '#40c4ff');
+    _drawLineChart('chart-rpm', rows.map(r => r.rpm), '#00e676');
+    _drawLineChart('chart-coolant', rows.map(r => r.coolant), '#ffab40');
+  } catch (_) {}
+}
+
+// ── Diagnostics screen ──────────────────────────
+async function refreshDiagnostics() {
+  try {
+    const r = await fetch('/health');
+    const h = await r.json();
+    const grid = document.getElementById('diag-services');
+    grid.innerHTML = Object.entries(h.services).map(([name, status]) =>
+      `<div class="diag-svc">
+        <span class="diag-svc-name">${name}</span>
+        <span class="diag-svc-status ${status}">${status}</span>
+      </div>`
+    ).join('');
+    document.getElementById('diag-ws-count').textContent = h.ws_clients;
+  } catch (_) {}
+}
+
+async function runOBDTest(test) {
+  const result = document.getElementById('diag-test-result');
+  result.textContent = `Running ${test} test...`;
+  result.textContent = `${test} test: not yet implemented (requires live OBD connection)`;
+}
+
 // ── WebSocket ──────────────────────────────────
 const connDot  = document.getElementById('conn-dot');
 const connTxt  = document.getElementById('txt-conn');
@@ -1094,10 +1621,35 @@ function connect() {
 
   ws.onclose = () => {
     setConnState('error', 'Offline');
-    setTimeout(connect, 3000);   // auto-reconnect
+    setTimeout(connect, 3000);
   };
 
   ws.onerror = () => ws.close();
 }
 
-connect();
+// ── Startup: fetch pages, init nav, connect WS ──
+(async function _startup() {
+  let pageFlags = {};
+  try {
+    const r = await fetch('/pages');
+    pageFlags = await r.json();
+  } catch (_) {
+    // Defaults: all enabled
+    pageFlags = { engine_detail: 1, engine_stats: 1, engine_raw: 1, settings_diagnostics: 0 };
+  }
+
+  NAV.init(pageFlags);
+  _pagesInit(pageFlags);
+
+  // Load throttle calibration display values
+  try {
+    const sr = await fetch('/settings');
+    const settings = await sr.json();
+    const idleEl = document.getElementById('throttle-cal-idle');
+    const wotEl = document.getElementById('throttle-cal-wot');
+    if (idleEl && settings.throttle_idle) idleEl.textContent = parseFloat(settings.throttle_idle).toFixed(1);
+    if (wotEl && settings.throttle_wot) wotEl.textContent = parseFloat(settings.throttle_wot).toFixed(1);
+  } catch (_) {}
+
+  connect();
+})();
