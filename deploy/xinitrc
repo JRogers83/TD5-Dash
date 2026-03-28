@@ -48,6 +48,7 @@ done
 
 exec chromium \
     --kiosk \
+    --disk-cache-size=1 \
     --window-position=0,0 \
     --window-size=1280,400 \
     --force-dark-mode \
