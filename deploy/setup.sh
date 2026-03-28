@@ -370,6 +370,15 @@ EOF
 echo "  Boot optimisations applied."
 echo "  TIP: After first boot, run 'systemd-analyze blame' to identify remaining slow units."
 
+# ── Clear Chromium cache ───────────────────────────────────────────────────────
+# Ensures a clean browser state after deploy — prevents stale frontend files
+# from persisting across updates.
+echo "▸ Clearing Chromium cache..."
+CHROMIUM_CACHE="$SERVICE_HOME/.cache/chromium"
+CHROMIUM_CONFIG="$SERVICE_HOME/.config/chromium"
+rm -rf "$CHROMIUM_CACHE" "$CHROMIUM_CONFIG"
+echo "  Chromium cache cleared."
+
 # ── Done ───────────────────────────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════╗"

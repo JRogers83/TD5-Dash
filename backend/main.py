@@ -82,6 +82,14 @@ FRONTEND = Path(__file__).parent.parent / "frontend"
 REPO_DIR = Path(__file__).parent.parent
 VENV_PIP = REPO_DIR / ".venv" / "bin" / "pip"
 
+def _clear_chromium_cache() -> None:
+    """Remove Chromium's disk and config caches so the next launch loads fresh frontend files."""
+    import shutil
+    home = Path.home()
+    for p in [home / ".cache" / "chromium", home / ".config" / "chromium"]:
+        if p.exists():
+            shutil.rmtree(p, ignore_errors=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -362,6 +370,7 @@ async def system_update() -> dict:
             capture_output=True,
         )
 
+    _clear_chromium_cache()
     asyncio.create_task(_delayed_restart())
 
     return {"ok": True, "output": git_out, "restarting": True}
@@ -370,6 +379,7 @@ async def system_update() -> dict:
 @app.post("/system/restart")
 async def system_restart() -> dict:
     """Restart the service without pulling code or updating dependencies."""
+    _clear_chromium_cache()
     asyncio.create_task(_delayed_restart())
     return {"ok": True, "restarting": True}
 
