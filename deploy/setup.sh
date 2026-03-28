@@ -259,7 +259,10 @@ echo "  NOTE: PulseAudio loopback takes effect on next login/reboot."
 # service after a git pull without an interactive sudo prompt.
 echo "▸ Configuring sudoers for service restart..."
 SUDOERS_FILE="/etc/sudoers.d/td5-dash"
-echo "$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart td5-dash" > "$SUDOERS_FILE"
+cat > "$SUDOERS_FILE" <<EOF
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart td5-dash
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
+EOF
 chmod 440 "$SUDOERS_FILE"
 echo "  Sudoers entry written to $SUDOERS_FILE"
 
