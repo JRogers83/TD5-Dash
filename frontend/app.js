@@ -1494,9 +1494,7 @@ function pagesRestart() {
   msg.style.visibility = 'visible';
   msg.style.color = 'var(--c-amber)';
   _doReboot();
-  // Reload the page after the service is back up so NAV re-reads the new page flags.
-  // 1.5s delayed restart + ~1.5s service startup = ~3s; 5s gives comfortable margin.
-  setTimeout(() => window.location.reload(), 5000);
+  // Page reload is handled automatically by the WS reconnect logic.
 }
 
 // ── Setup wizard ────────────────────────────────
@@ -1606,11 +1604,20 @@ function setConnState(cls, label) {
   connTxt.textContent = label;
 }
 
+let _wsEverConnected = false;
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const ws    = new WebSocket(`${proto}//${location.host}/ws`);
 
   ws.onopen = () => {
+    if (_wsEverConnected) {
+      // Backend restarted — reload so _startup() re-fetches page flags and
+      // NAV re-initialises. Equivalent to pressing F5.
+      window.location.reload();
+      return;
+    }
+    _wsEverConnected = true;
     setConnState('connected', 'Online');
     document.dispatchEvent(new CustomEvent('td5-ws-connected'));
   };
