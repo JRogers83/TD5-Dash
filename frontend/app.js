@@ -1487,7 +1487,16 @@ function _pagesToggle(key, enabled) {
 }
 
 function pagesRestart() {
+  const btn = document.getElementById('pages-restart-btn');
+  const msg = document.getElementById('pages-changed-msg');
+  btn.disabled = true;
+  msg.textContent = 'Restarting…';
+  msg.style.visibility = 'visible';
+  msg.style.color = 'var(--c-amber)';
   _doReboot();
+  // Reload the page after the service is back up so NAV re-reads the new page flags.
+  // 1.5s delayed restart + ~1.5s service startup = ~3s; 5s gives comfortable margin.
+  setTimeout(() => window.location.reload(), 5000);
 }
 
 // ── Setup wizard ────────────────────────────────
