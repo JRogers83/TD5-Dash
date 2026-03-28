@@ -254,10 +254,10 @@ systemctl restart raspotify
 echo "  Raspotify reconfigured to output via td5_sink."
 echo "  NOTE: PulseAudio loopback takes effect on next login/reboot."
 
-# ── Sudoers: allow service user to restart td5-dash without password ───────────
-# Required for the OTA update endpoint (POST /system/update) to restart the
-# service after a git pull without an interactive sudo prompt.
-echo "▸ Configuring sudoers for service restart..."
+# ── Sudoers: passwordless commands for the service user ───────────────────────
+# restart td5-dash: required for OTA update endpoint (POST /system/update)
+# shutdown -h now:  required for shutdown endpoint (POST /system/shutdown)
+echo "▸ Configuring sudoers for service restart and shutdown..."
 SUDOERS_FILE="/etc/sudoers.d/td5-dash"
 cat > "$SUDOERS_FILE" <<EOF
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart td5-dash
