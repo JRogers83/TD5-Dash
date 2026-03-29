@@ -454,6 +454,18 @@ html, body {
   color: var(--c-green);
 }
 
+.relay-btn--primary {
+  background: color-mix(in srgb, var(--c-green) 15%, transparent);
+  border-color: var(--c-green);
+}
+.relay-btn--primary .relay-btn__label { color: var(--c-green); }
+
+.relay-btn--danger {
+  background: color-mix(in srgb, var(--c-red) 15%, transparent);
+  border-color: var(--c-red);
+}
+.relay-btn--danger .relay-btn__label { color: var(--c-red); }
+
 .status-item {
   display: flex;
   align-items: center;
@@ -1320,19 +1332,6 @@ html, body {
   align-items: center;
   gap: 12px;
 }
-
-/* relay-btn--primary and relay-btn--danger variants */
-.relay-btn--primary {
-  background: color-mix(in srgb, var(--c-green) 15%, transparent);
-  border-color: var(--c-green);
-}
-.relay-btn--primary .relay-btn__label { color: var(--c-green); }
-
-.relay-btn--danger {
-  background: color-mix(in srgb, var(--c-red) 15%, transparent);
-  border-color: var(--c-red);
-}
-.relay-btn--danger .relay-btn__label { color: var(--c-red); }
 
 /* ── Engine Detail (layer 1) ──────────────────── */
 .engine-detail-content {
