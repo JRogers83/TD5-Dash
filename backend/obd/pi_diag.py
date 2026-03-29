@@ -152,11 +152,13 @@ def _run_test(
                 # StartCommunication checksum (vehicle-confirmed frame)
                 sc_frame = bytes([0x81, 0x13, 0xF7, 0x81])
                 cs = P.checksum(sc_frame)
-                assert cs == 0x0C, f"Checksum expected 0x0C, got 0x{cs:02X}"
+                if cs != 0x0C:
+                    raise RuntimeError(f"Checksum expected 0x0C, got 0x{cs:02X}")
 
                 # Seed-key LFSR (vehicle-confirmed seed/key pair)
                 key = P.td5_seed_to_key(0xBA08)
-                assert key == 0x70DC, f"Seed-key expected 0x70DC, got 0x{key:04X}"
+                if key != 0x70DC:
+                    raise RuntimeError(f"Seed-key expected 0x70DC, got 0x{key:04X}")
 
                 emit(2, "pass", "Checksum 0x0C OK  |  seed 0xBA08 → key 0x70DC OK")
                 passed += 1
@@ -350,5 +352,6 @@ async def run_full_test(manager: ConnectionManager) -> dict:
     loop     = asyncio.get_running_loop()
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="td5-pi-diag")
     loop.run_in_executor(executor, _run_test, manager, loop, log_path)
+    executor.shutdown(wait=False)
 
     return {"ok": True, "started": True, "log_file": log_filename}

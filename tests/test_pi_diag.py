@@ -25,9 +25,7 @@ def test_run_full_test_rejects_when_already_running():
     """POST /obd/full-test returns error dict when a test is already in progress."""
     pi_diag._test_running = True
     try:
-        result = asyncio.get_event_loop().run_until_complete(
-            pi_diag.run_full_test(_make_manager())
-        )
+        result = asyncio.run(pi_diag.run_full_test(_make_manager()))
         assert result == {"error": "already running"}
     finally:
         pi_diag._test_running = False
@@ -72,6 +70,7 @@ def test_run_test_creates_log_file(tmp_path):
     content = Path(log_path).read_text()
     assert "STAGE 1" in content
     assert "STAGE 2" in content
+    loop.run_until_complete(asyncio.sleep(0))
     loop.close()
 
 
