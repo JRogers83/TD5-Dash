@@ -105,8 +105,12 @@ def test_run_test_uses_live_session_when_available(tmp_path):
     manager = _make_manager()
     log_path = str(tmp_path / "obd_borrow_test.log")
 
+    mock_usb = MagicMock()
+    mock_usb.find_all.return_value = [("mock_device",)]  # Stage 1 passes
+
     try:
-        pi_diag._run_test(manager, loop, log_path)
+        with patch.dict("sys.modules", {"pyftdi.usbtools": mock_usb}):
+            pi_diag._run_test(manager, loop, log_path)
     finally:
         svc._live_session = None
 
@@ -132,7 +136,11 @@ def test_run_test_opens_own_connection_when_no_live_session(tmp_path):
     manager = _make_manager()
     log_path = str(tmp_path / "obd_own_conn_test.log")
 
-    with patch("obd.pi_diag.KLineConnection") as mock_conn_cls:
+    mock_usb = MagicMock()
+    mock_usb.find_all.return_value = [("mock_device",)]  # Stage 1 passes
+
+    with patch.dict("sys.modules", {"pyftdi.usbtools": mock_usb}), \
+         patch("obd.pi_diag.KLineConnection") as mock_conn_cls:
         mock_conn_cls.return_value.open = MagicMock(side_effect=Exception("no hardware"))
         pi_diag._run_test(manager, loop, log_path)
 

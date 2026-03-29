@@ -154,8 +154,7 @@ def _run_test(
         except Exception as exc:
             emit(1, "fail", str(exc))
             failed += 1
-            # Stage 2 (protocol self-test) is software-only and always runs.
-            # Stage 3 will fail on its own if no hardware is present.
+            skip_from = 3   # Stage 2 (protocol self-test) can still run
 
         # ── Stage 2: Protocol Self-Test ───────────────────────────────────────
         if skip_from and skip_from <= 2:
@@ -181,11 +180,11 @@ def _run_test(
                 failed += 1
 
         # ── Stage 3: Fast Init + StartCommunication ───────────────────────────
-        if _borrowing:
+        if skip_from and skip_from <= 3:
+            emit(3, "skip"); skipped += 1
+        elif _borrowing:
             emit(3, "pass", "Poll loop paused — active session borrowed")
             passed += 1
-        elif skip_from and skip_from <= 3:
-            emit(3, "skip"); skipped += 1
         else:
             emit(3, "running")
             try:
@@ -199,11 +198,11 @@ def _run_test(
                 skip_from = 4
 
         # ── Stage 4: Diagnostic Session ───────────────────────────────────────
-        if _borrowing:
+        if skip_from and skip_from <= 4:
+            emit(4, "skip"); skipped += 1
+        elif _borrowing:
             emit(4, "pass", "Already in diagnostic session")
             passed += 1
-        elif skip_from and skip_from <= 4:
-            emit(4, "skip"); skipped += 1
         else:
             emit(4, "running")
             try:
@@ -218,11 +217,11 @@ def _run_test(
                 skip_from = 5
 
         # ── Stage 5: Security Access ──────────────────────────────────────────
-        if _borrowing:
+        if skip_from and skip_from <= 5:
+            emit(5, "skip"); skipped += 1
+        elif _borrowing:
             emit(5, "pass", "Already authenticated")
             passed += 1
-        elif skip_from and skip_from <= 5:
-            emit(5, "skip"); skipped += 1
         else:
             emit(5, "running")
             try:
