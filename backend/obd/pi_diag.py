@@ -116,14 +116,20 @@ def _run_test(
     _borrowing = False   # True when using the poll loop's active session
 
     # Check if the OBD poll loop has an active authenticated session to borrow.
-    # Lazy import so the lock object is fetched fresh each call — important for
-    # testability (tests replace svc._obd_lock with a new object).
-    from .service import _obd_lock, _live_session
-    if _live_session is not None:
-        _obd_lock.acquire()   # blocks at most one poll cycle (~400ms)
-        _borrowing = True
-        session    = _live_session
-        log.info("Session borrowed from active poll loop — poll paused for duration of test")
+    # Import via module reference so _live_session is always read through the
+    # module attribute (not a stale local binding) — avoids TOCTOU if the
+    # session drops between the check and the lock acquisition.
+    from . import service as _svc
+    if _svc._live_session is not None:
+        _svc._obd_lock.acquire()   # blocks at most one poll cycle (~400ms)
+        # Re-read after acquiring lock — session may have been cleared while waiting
+        if _svc._live_session is not None:
+            _borrowing = True
+            session    = _svc._live_session
+            log.info("Session borrowed from active poll loop — poll paused for duration of test")
+        else:
+            _svc._obd_lock.release()
+            log.info("Session dropped while acquiring lock — will open own connection. FTDI URL: %s", FTDI_URL)
     else:
         log.info("No active session — will open own connection. FTDI URL: %s", FTDI_URL)
 
@@ -321,7 +327,7 @@ def _run_test(
 
     finally:
         if _borrowing:
-            _obd_lock.release()
+            _svc._obd_lock.release()
             log.info("Poll loop lock released — polling will resume")
         elif conn:
             try:
