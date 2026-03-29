@@ -86,3 +86,57 @@ def test_protocol_self_test_vectors():
 
     # Seed-key LFSR — vehicle-confirmed
     assert P.td5_seed_to_key(0xBA08) == 0x70DC
+
+
+# ── Session borrowing ─────────────────────────────────────────────────────────
+
+def test_run_test_uses_live_session_when_available(tmp_path):
+    """When _live_session is set, _run_test borrows it and stages 3-5 auto-pass."""
+    import threading
+    import obd.service as svc
+
+    mock_session = MagicMock()
+    mock_session.read_local_id_safe.return_value = None  # PIDs return no response
+
+    svc._live_session = mock_session
+    svc._obd_lock = threading.Lock()
+
+    loop = asyncio.new_event_loop()
+    manager = _make_manager()
+    log_path = str(tmp_path / "obd_borrow_test.log")
+
+    try:
+        pi_diag._run_test(manager, loop, log_path)
+    finally:
+        svc._live_session = None
+
+    content = Path(log_path).read_text()
+    assert "Poll loop paused" in content
+    assert "Already in diagnostic session" in content
+    assert "Already authenticated" in content
+
+    # Lock must be released after test completes
+    assert svc._obd_lock.acquire(blocking=False)
+    svc._obd_lock.release()
+
+    loop.run_until_complete(asyncio.sleep(0))
+    loop.close()
+
+
+def test_run_test_opens_own_connection_when_no_live_session(tmp_path):
+    """When _live_session is None, _run_test opens its own KLineConnection."""
+    import obd.service as svc
+    svc._live_session = None
+
+    loop = asyncio.new_event_loop()
+    manager = _make_manager()
+    log_path = str(tmp_path / "obd_own_conn_test.log")
+
+    with patch("obd.pi_diag.KLineConnection") as mock_conn_cls:
+        mock_conn_cls.return_value.open = MagicMock(side_effect=Exception("no hardware"))
+        pi_diag._run_test(manager, loop, log_path)
+
+    mock_conn_cls.return_value.open.assert_called_once()
+
+    loop.run_until_complete(asyncio.sleep(0))
+    loop.close()

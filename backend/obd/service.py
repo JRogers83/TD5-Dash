@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -48,6 +49,13 @@ POLL_INTERVAL = float(os.getenv("TD5_POLL_INTERVAL", "1.0"))
 RETRY_DELAY_S = 5.0   # seconds to wait before reconnecting after a failure
 FAULT_POLL_INTERVAL_S = 30.0  # read fault codes every N seconds
 HISTORY_WRITE_INTERVAL_S = 10.0  # write to engine_history every N seconds
+
+# ── Diagnostic session sharing ─────────────────────────────────────────────────
+# Allows pi_diag to borrow the active session instead of opening a competing one.
+# The lock wraps each poll cycle; pi_diag acquires it to pause polling.
+_obd_lock:     threading.Lock           = threading.Lock()
+_live_session: "TD5Session | None"      = None
+_live_conn:    "KLineConnection | None" = None
 
 
 # ── Session-level K-Line operations ───────────────────────────────────────────
@@ -191,6 +199,7 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
     with read_local_id_safe() — timeouts on these produce default values (0)
     rather than crashing the poll cycle.
     """
+    global _live_session, _live_conn
     while True:
         log.info("Connecting to TD5 ECU at %s …", FTDI_URL)
         try:
@@ -215,95 +224,101 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                 last_successful_read = time.monotonic()
 
                 while True:
-                    try:
-                        # ── Always-available PIDs ────────────────────────
-                        temps = session.read_local_id(P.PID_TEMPS)
-                        coolant   = D.decode_coolant_temp(temps)
-                        air_temp  = D.decode_air_temp(temps)
-                        ext_temp  = D.decode_external_temp(temps)
-                        fuel_temp = D.decode_fuel_temp(temps)
+                    with _obd_lock:
+                        _live_session = session
+                        _live_conn    = conn
+                        try:
+                            # ── Always-available PIDs ────────────────────────
+                            temps = session.read_local_id(P.PID_TEMPS)
+                            coolant   = D.decode_coolant_temp(temps)
+                            air_temp  = D.decode_air_temp(temps)
+                            ext_temp  = D.decode_external_temp(temps)
+                            fuel_temp = D.decode_fuel_temp(temps)
 
-                        boost = D.decode_boost(
-                            session.read_local_id(P.PID_MAP_MAF))
-                        speed = D.decode_speed(
-                            session.read_local_id(P.PID_SPEED))
+                            boost = D.decode_boost(
+                                session.read_local_id(P.PID_MAP_MAF))
+                            speed = D.decode_speed(
+                                session.read_local_id(P.PID_SPEED))
 
-                        last_successful_read = time.monotonic()
+                            last_successful_read = time.monotonic()
 
-                        # ── Engine-running PIDs (safe — None on timeout) ─
-                        rpm_payload = session.read_local_id_safe(P.PID_RPM)
-                        rpm = D.decode_rpm(rpm_payload) if rpm_payload else None
+                            # ── Engine-running PIDs (safe — None on timeout) ─
+                            rpm_payload = session.read_local_id_safe(P.PID_RPM)
+                            rpm = D.decode_rpm(rpm_payload) if rpm_payload else None
 
-                        batt_payload = session.read_local_id_safe(P.PID_BATTERY)
-                        battery = D.decode_battery(batt_payload) if batt_payload else None
+                            batt_payload = session.read_local_id_safe(P.PID_BATTERY)
+                            battery = D.decode_battery(batt_payload) if batt_payload else None
 
-                        thr_payload = session.read_local_id_safe(P.PID_THROTTLE)
-                        throttle = D.decode_throttle(thr_payload) if thr_payload else None
-                        throttle_raw = D.decode_throttle_raw(thr_payload) if thr_payload else None
+                            thr_payload = session.read_local_id_safe(P.PID_THROTTLE)
+                            throttle = D.decode_throttle(thr_payload) if thr_payload else None
+                            throttle_raw = D.decode_throttle_raw(thr_payload) if thr_payload else None
 
-                        # ── Periodic fault code refresh ──────────────────
-                        if time.monotonic() - last_fault_read > FAULT_POLL_INTERVAL_S:
-                            try:
-                                fault_payload = session.read_local_id(P.PID_FAULTS)
-                                fault_codes = D.decode_faults(fault_payload)
-                                last_fault_read = time.monotonic()
-                            except KLineError:
-                                pass  # keep previous fault_codes
+                            # ── Periodic fault code refresh ──────────────────
+                            if time.monotonic() - last_fault_read > FAULT_POLL_INTERVAL_S:
+                                try:
+                                    fault_payload = session.read_local_id(P.PID_FAULTS)
+                                    fault_codes = D.decode_faults(fault_payload)
+                                    last_fault_read = time.monotonic()
+                                except KLineError:
+                                    pass  # keep previous fault_codes
 
-                        # ── Broadcast whatever data we have ──────────────
-                        asyncio.run_coroutine_threadsafe(
-                            manager.broadcast({
-                                "type": "engine",
-                                "data": {
-                                    "rpm":              round(rpm) if rpm is not None else 0,
-                                    "coolant_temp_c":   coolant,
-                                    "inlet_air_temp_c": air_temp,
-                                    "external_temp_c":  ext_temp,
-                                    "boost_bar":        boost,
-                                    "throttle_pct":     throttle if throttle is not None else 0.0,
-                                    "throttle_raw_pct": throttle_raw,
-                                    "battery_v":        battery if battery is not None else 0.0,
-                                    "road_speed_kph":   round(speed) if speed is not None else 0,
-                                    "fuel_temp_c":      fuel_temp,
-                                    "fault_codes":      fault_codes,
-                                },
-                            }),
-                            loop,
-                        )
+                            # ── Broadcast whatever data we have ──────────────
+                            asyncio.run_coroutine_threadsafe(
+                                manager.broadcast({
+                                    "type": "engine",
+                                    "data": {
+                                        "rpm":              round(rpm) if rpm is not None else 0,
+                                        "coolant_temp_c":   coolant,
+                                        "inlet_air_temp_c": air_temp,
+                                        "external_temp_c":  ext_temp,
+                                        "boost_bar":        boost,
+                                        "throttle_pct":     throttle if throttle is not None else 0.0,
+                                        "throttle_raw_pct": throttle_raw,
+                                        "battery_v":        battery if battery is not None else 0.0,
+                                        "road_speed_kph":   round(speed) if speed is not None else 0,
+                                        "fuel_temp_c":      fuel_temp,
+                                        "fault_codes":      fault_codes,
+                                    },
+                                }),
+                                loop,
+                            )
 
-                        # ── Periodic history write (~10s cadence) ──────
-                        if time.monotonic() - last_history_write >= HISTORY_WRITE_INTERVAL_S:
-                            try:
-                                db.insert_history({
-                                    "rpm":              rpm or 0,
-                                    "road_speed_kph":   speed or 0,
-                                    "coolant_temp_c":   coolant,
-                                    "boost_bar":        boost,
-                                    "throttle_pct":     throttle or 0,
-                                    "battery_v":        battery or 0,
-                                    "fuel_temp_c":      fuel_temp,
-                                })
-                                last_history_write = time.monotonic()
-                            except Exception:
-                                log.debug("Failed to write engine history row")
+                            # ── Periodic history write (~10s cadence) ──────
+                            if time.monotonic() - last_history_write >= HISTORY_WRITE_INTERVAL_S:
+                                try:
+                                    db.insert_history({
+                                        "rpm":              rpm or 0,
+                                        "road_speed_kph":   speed or 0,
+                                        "coolant_temp_c":   coolant,
+                                        "boost_bar":        boost,
+                                        "throttle_pct":     throttle or 0,
+                                        "battery_v":        battery or 0,
+                                        "fuel_temp_c":      fuel_temp,
+                                    })
+                                    last_history_write = time.monotonic()
+                                except Exception:
+                                    log.debug("Failed to write engine history row")
 
-                        time.sleep(POLL_INTERVAL)
+                        except KLineError as exc:
+                            _live_session = None
+                            _live_conn    = None
+                            log.warning("K-Line read error: %s — reconnecting", exc)
+                            break
 
-                    except KLineError as exc:
-                        # A failure on an always-available PID means the
-                        # connection is broken — reconnect.
-                        log.warning("K-Line read error: %s — reconnecting", exc)
-                        break
+                        # If all PIDs timed out (engine off, ECU sluggish), send
+                        # a keepalive to prevent the session from expiring.
+                        if time.monotonic() - last_successful_read > 3.0:
+                            session.send_tester_present()
 
-                    # If all PIDs timed out (engine off, ECU sluggish), send
-                    # a keepalive to prevent the session from expiring.
-                    if time.monotonic() - last_successful_read > 3.0:
-                        session.send_tester_present()
+                    time.sleep(POLL_INTERVAL)   # lock released here — pi_diag can acquire
 
         except KLineError as exc:
             log.error("K-Line connection failed: %s — retrying in %.0f s", exc, RETRY_DELAY_S)
         except Exception:
             log.exception("Unexpected error in OBD poll loop — retrying in %.0f s", RETRY_DELAY_S)
+        finally:
+            _live_session = None
+            _live_conn    = None
 
         time.sleep(RETRY_DELAY_S)
 
