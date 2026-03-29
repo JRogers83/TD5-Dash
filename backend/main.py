@@ -260,6 +260,40 @@ async def clear_dtc() -> dict:
     return {"ok": True, "detail": "Clear request queued"}
 
 
+# ── API: Pi OBD diagnostic ────────────────────────────────────────────────────
+
+@app.post("/obd/full-test")
+async def obd_full_test() -> dict:
+    """
+    Start the 7-stage Pi OBD diagnostic test.
+
+    Returns immediately — progress is broadcast over WebSocket as
+    {"type": "obd_test", "data": {...}} messages.
+    Only one test may run at a time.
+    """
+    from obd.pi_diag import run_full_test
+    return await run_full_test(manager)
+
+
+# ── System: shutdown ──────────────────────────────────────────────────────────
+
+async def _delayed_shutdown() -> None:
+    """Wait briefly so the HTTP response is sent, then shut down."""
+    await asyncio.sleep(1.5)
+    if subprocess.run(["which", "shutdown"], capture_output=True).returncode == 0:
+        subprocess.Popen(["sudo", "shutdown", "-h", "now"],
+                         start_new_session=True)
+    else:
+        log.info("Shutdown: 'shutdown' command not available (Docker/dev)")
+
+
+@app.post("/system/shutdown")
+async def system_shutdown() -> dict:
+    """Shut down the Pi cleanly."""
+    asyncio.create_task(_delayed_shutdown())
+    return {"ok": True, "shutting_down": True}
+
+
 # ── API: settings & pages ─────────────────────────────────────────────────────
 
 @app.get("/settings")
