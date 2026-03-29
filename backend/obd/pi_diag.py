@@ -315,20 +315,20 @@ def _run_test(
 
         _test_running = False
 
-    # Broadcast completion summary
-    asyncio.run_coroutine_threadsafe(
-        manager.broadcast({
-            "type": "obd_test",
-            "data": {
-                "status":   "complete",
-                "log_file": Path(log_path).name,
-                "passed":   passed,
-                "failed":   failed,
-                "skipped":  skipped,
-            },
-        }),
-        loop,
-    )
+        # Broadcast completion summary — inside finally so it always fires
+        asyncio.run_coroutine_threadsafe(
+            manager.broadcast({
+                "type": "obd_test",
+                "data": {
+                    "status":   "complete",
+                    "log_file": Path(log_path).name,
+                    "passed":   passed,
+                    "failed":   failed,
+                    "skipped":  skipped,
+                },
+            }),
+            loop,
+        )
 
 
 async def run_full_test(manager: ConnectionManager) -> dict:
