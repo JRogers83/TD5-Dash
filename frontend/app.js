@@ -1497,6 +1497,21 @@ function pagesRestart() {
   // Page reload is handled automatically by the WS reconnect logic.
 }
 
+// ── Shutdown ─────────────────────────────────────
+
+function confirmShutdown() {
+  document.getElementById('diag-shutdown-confirm').style.display = 'flex';
+}
+
+function cancelShutdown() {
+  document.getElementById('diag-shutdown-confirm').style.display = 'none';
+}
+
+async function doShutdown() {
+  document.getElementById('diag-shutdown-confirm').style.display = 'none';
+  await fetch('/system/shutdown', { method: 'POST' }).catch(() => {});
+}
+
 // ── Setup wizard ────────────────────────────────
 
 function confirmRestart() {
@@ -1589,9 +1604,90 @@ async function refreshDiagnostics() {
   } catch (_) {}
 }
 
+// ── Full OBD test ────────────────────────────────
+
+const _OBD_STAGE_NAMES = {
+  1: 'FTDI Detection',
+  2: 'Protocol Self-Test',
+  3: 'Fast Init',
+  4: 'Diagnostic Session',
+  5: 'Security Access',
+  6: 'PID Probe',
+  7: 'Live Data (10s)',
+};
+
+function _initOBDStagePanel() {
+  const list = document.getElementById('diag-stage-list');
+  list.innerHTML = Object.entries(_OBD_STAGE_NAMES).map(([n, name]) =>
+    `<div class="diag-stage-row" id="diag-stage-row-${n}">
+      <span class="diag-stage-num">${n}</span>
+      <span class="diag-stage-name">${name}</span>
+      <div class="status-dot" id="diag-stage-dot-${n}"></div>
+      <span class="diag-stage-detail" id="diag-stage-detail-${n}">—</span>
+    </div>`
+  ).join('');
+  document.getElementById('diag-log-name').textContent = '';
+  document.getElementById('diag-stage-panel').style.display = 'flex';
+}
+
+function handleOBDTest(data) {
+  if (data.status === 'complete') {
+    _finaliseOBDTest(data);
+    return;
+  }
+  _updateOBDStage(data.stage, data.status, data.detail || '');
+}
+
+function _updateOBDStage(stage, status, detail) {
+  const dot    = document.getElementById(`diag-stage-dot-${stage}`);
+  const detEl  = document.getElementById(`diag-stage-detail-${stage}`);
+  if (!dot) return;
+
+  const dotClass = {
+    running: 'warn',
+    pass:    'on',
+    fail:    'red',
+    skip:    'off',
+  }[status] || '';
+
+  dot.className    = `status-dot ${dotClass}`;
+  detEl.textContent = detail;
+}
+
+function _finaliseOBDTest(data) {
+  const btn = document.getElementById('btn-full-obd-test');
+  const lbl = document.getElementById('lbl-full-obd-test');
+  if (btn) btn.disabled = false;
+  if (lbl) lbl.textContent = 'Full OBD Test';
+
+  const logEl = document.getElementById('diag-log-name');
+  if (logEl && data.log_file) {
+    logEl.textContent =
+      `Log: ${data.log_file}  (${data.passed}✓ ${data.failed}✗ ${data.skipped}–)`;
+  }
+}
+
+async function runFullOBDTest() {
+  const btn = document.getElementById('btn-full-obd-test');
+  const lbl = document.getElementById('lbl-full-obd-test');
+  btn.disabled = true;
+  lbl.textContent = 'Running…';
+  _initOBDStagePanel();
+  try {
+    const r    = await fetch('/obd/full-test', { method: 'POST' });
+    const data = await r.json();
+    if (data.error) {
+      lbl.textContent = 'Already Running';
+      btn.disabled = false;
+    }
+  } catch (_) {
+    lbl.textContent = 'Full OBD Test';
+    btn.disabled = false;
+  }
+}
+
 async function runOBDTest(test) {
   const result = document.getElementById('diag-test-result');
-  result.textContent = `Running ${test} test...`;
   result.textContent = `${test} test: not yet implemented (requires live OBD connection)`;
 }
 
@@ -1625,13 +1721,14 @@ function connect() {
   ws.onmessage = e => {
     const { type, data } = JSON.parse(e.data);
     switch (type) {
-      case 'engine':  handleEngine(data);  break;
-      case 'spotify': handleSpotify(data); break;
-      case 'victron': handleVictron(data); break;
+      case 'engine':   handleEngine(data);   break;
+      case 'spotify':  handleSpotify(data);  break;
+      case 'victron':  handleVictron(data);  break;
       case 'system':   handleSystem(data);   break;
       case 'starlink': handleStarlink(data); break;
       case 'gps':      handleGps(data);      break;
       case 'weather':  handleWeather(data);  break;
+      case 'obd_test': handleOBDTest(data);  break;
     }
   };
 
