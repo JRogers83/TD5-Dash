@@ -1641,7 +1641,7 @@ function handleOBDTest(data) {
 function _updateOBDStage(stage, status, detail) {
   const dot    = document.getElementById(`diag-stage-dot-${stage}`);
   const detEl  = document.getElementById(`diag-stage-detail-${stage}`);
-  if (!dot) return;
+  if (!dot || !detEl) return;
 
   const dotClass = {
     running: 'warn',
@@ -1678,6 +1678,9 @@ async function runFullOBDTest() {
     const data = await r.json();
     if (data.error) {
       lbl.textContent = 'Already Running';
+      btn.disabled = false;
+    } else if (!data.ok) {
+      lbl.textContent = 'Full OBD Test';
       btn.disabled = false;
     }
   } catch (_) {
