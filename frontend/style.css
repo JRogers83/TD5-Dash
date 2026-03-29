@@ -1253,6 +1253,87 @@ html, body {
   min-height: 0;
 }
 
+/* ── Full OBD test — stage progress panel ─── */
+.diag-stage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.diag-stage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.diag-stage-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.diag-stage-num {
+  font-size: 16px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 20px;
+  text-align: right;
+}
+
+.diag-stage-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 0 0 160px;
+}
+
+.diag-stage-detail {
+  font-size: 16px;
+  color: var(--text-muted);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diag-log-name {
+  font-size: 16px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ── Shutdown section ─────────────────────── */
+.diag-shutdown {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diag-shutdown-confirm {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* relay-btn--primary and relay-btn--danger variants */
+.relay-btn--primary {
+  background: color-mix(in srgb, var(--c-green) 15%, transparent);
+  border-color: var(--c-green);
+}
+.relay-btn--primary .relay-btn__label { color: var(--c-green); }
+
+.relay-btn--danger {
+  background: color-mix(in srgb, var(--c-red) 15%, transparent);
+  border-color: var(--c-red);
+}
+.relay-btn--danger .relay-btn__label { color: var(--c-red); }
+
 /* ── Engine Detail (layer 1) ──────────────────── */
 .engine-detail-content {
   flex: 1;
