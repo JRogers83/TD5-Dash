@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ws_hub import ConnectionManager
-from .connection import KLineConnection, KLineError
+from .connection import KLineConnection
 from . import protocol as P
 from . import decoder as D
 
@@ -345,13 +345,21 @@ async def run_full_test(manager: ConnectionManager) -> dict:
         return {"error": "already running"}
 
     _test_running = True
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_filename = f"obd_{timestamp}.log"
-    log_path     = str(LOG_DIR / log_filename)
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        log_filename = f"obd_{timestamp}.log"
+        log_path     = str(LOG_DIR / log_filename)
 
-    loop     = asyncio.get_running_loop()
-    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="td5-pi-diag")
-    loop.run_in_executor(executor, _run_test, manager, loop, log_path)
-    executor.shutdown(wait=False)
+        loop     = asyncio.get_running_loop()
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="td5-pi-diag")
+        future   = loop.run_in_executor(executor, _run_test, manager, loop, log_path)
+        future.add_done_callback(
+            lambda f: log.error("OBD test thread raised unexpectedly: %s", f.exception())
+            if f.exception() else None
+        )
+        executor.shutdown(wait=False)
+    except Exception:
+        _test_running = False
+        raise
 
     return {"ok": True, "started": True, "log_file": log_filename}

@@ -35,5 +35,4 @@ data/logs/
 # OBD test/sweep tool log files
 tools/td5_test_*.txt
 tools/td5_sweep_*.txt
-tools/td5_diag_*.txt
 tools/td5_pc_diag_*.txt
