@@ -111,8 +111,21 @@ def _run_test(
     skipped = 0
     skip_from: int | None = None   # if set, skip all stages >= this number
 
-    conn    = None
-    session = None
+    conn       = None
+    session    = None
+    _borrowing = False   # True when using the poll loop's active session
+
+    # Check if the OBD poll loop has an active authenticated session to borrow.
+    # Lazy import so the lock object is fetched fresh each call — important for
+    # testability (tests replace svc._obd_lock with a new object).
+    from .service import _obd_lock, _live_session
+    if _live_session is not None:
+        _obd_lock.acquire()   # blocks at most one poll cycle (~400ms)
+        _borrowing = True
+        session    = _live_session
+        log.info("Session borrowed from active poll loop — poll paused for duration of test")
+    else:
+        log.info("No active session — will open own connection. FTDI URL: %s", FTDI_URL)
 
     try:
         log.info("=" * 60)
@@ -141,7 +154,8 @@ def _run_test(
         except Exception as exc:
             emit(1, "fail", str(exc))
             failed += 1
-            skip_from = 3   # Stage 2 (protocol self-test) can still run
+            # Stage 2 (protocol self-test) is software-only and always runs.
+            # Stage 3 will fail on its own if no hardware is present.
 
         # ── Stage 2: Protocol Self-Test ───────────────────────────────────────
         if skip_from and skip_from <= 2:
@@ -167,7 +181,10 @@ def _run_test(
                 failed += 1
 
         # ── Stage 3: Fast Init + StartCommunication ───────────────────────────
-        if skip_from and skip_from <= 3:
+        if _borrowing:
+            emit(3, "pass", "Poll loop paused — active session borrowed")
+            passed += 1
+        elif skip_from and skip_from <= 3:
             emit(3, "skip"); skipped += 1
         else:
             emit(3, "running")
@@ -182,7 +199,10 @@ def _run_test(
                 skip_from = 4
 
         # ── Stage 4: Diagnostic Session ───────────────────────────────────────
-        if skip_from and skip_from <= 4:
+        if _borrowing:
+            emit(4, "pass", "Already in diagnostic session")
+            passed += 1
+        elif skip_from and skip_from <= 4:
             emit(4, "skip"); skipped += 1
         else:
             emit(4, "running")
@@ -198,7 +218,10 @@ def _run_test(
                 skip_from = 5
 
         # ── Stage 5: Security Access ──────────────────────────────────────────
-        if skip_from and skip_from <= 5:
+        if _borrowing:
+            emit(5, "pass", "Already authenticated")
+            passed += 1
+        elif skip_from and skip_from <= 5:
             emit(5, "skip"); skipped += 1
         else:
             emit(5, "running")
@@ -298,7 +321,10 @@ def _run_test(
                 failed += 1
 
     finally:
-        if conn:
+        if _borrowing:
+            _obd_lock.release()
+            log.info("Poll loop lock released — polling will resume")
+        elif conn:
             try:
                 conn.close()
             except Exception:
