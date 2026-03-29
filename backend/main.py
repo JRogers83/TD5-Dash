@@ -275,25 +275,6 @@ async def obd_full_test() -> dict:
     return await run_full_test(manager)
 
 
-# ── System: shutdown ──────────────────────────────────────────────────────────
-
-async def _delayed_shutdown() -> None:
-    """Wait briefly so the HTTP response is sent, then shut down."""
-    await asyncio.sleep(1.5)
-    if subprocess.run(["which", "shutdown"], capture_output=True).returncode == 0:
-        subprocess.Popen(["sudo", "shutdown", "-h", "now"],
-                         start_new_session=True)
-    else:
-        log.info("Shutdown: 'shutdown' command not available (Docker/dev)")
-
-
-@app.post("/system/shutdown")
-async def system_shutdown() -> dict:
-    """Shut down the Pi cleanly."""
-    asyncio.create_task(_delayed_shutdown())
-    return {"ok": True, "shutting_down": True}
-
-
 # ── API: settings & pages ─────────────────────────────────────────────────────
 
 @app.get("/settings")
@@ -420,6 +401,25 @@ async def system_restart() -> dict:
     _clear_chromium_cache()
     asyncio.create_task(_delayed_restart())
     return {"ok": True, "restarting": True}
+
+
+# ── System: shutdown ──────────────────────────────────────────────────────────
+
+async def _delayed_shutdown() -> None:
+    """Wait briefly so the HTTP response is sent, then shut down."""
+    await asyncio.sleep(1.5)
+    if subprocess.run(["which", "shutdown"], capture_output=True).returncode == 0:
+        subprocess.Popen(["sudo", "shutdown", "-h", "now"],
+                         start_new_session=True)
+    else:
+        log.info("Shutdown: 'shutdown' command not available (Docker/dev)")
+
+
+@app.post("/system/shutdown")
+async def system_shutdown() -> dict:
+    """Shut down the Pi cleanly."""
+    asyncio.create_task(_delayed_shutdown())
+    return {"ok": True, "shutting_down": True}
 
 
 # Static files mount last so /ws, /api/*, /spotify/*, /system/* are matched first.
