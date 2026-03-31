@@ -1278,21 +1278,9 @@ document.getElementById('tile-faults').addEventListener('click', () => {
 });
 
 // ── DTC detail (Engine layer 1) ─────────────────
-// Known TD5 DTC descriptions (subset — unknown codes show hex)
-const _DTC_TABLE = {
-  0x0263: 'Injector 1 open', 0x0266: 'Injector 2 open', 0x0269: 'Injector 3 open',
-  0x026C: 'Injector 4 open', 0x026F: 'Injector 5 open',
-  0x0380: 'Glow plug 1', 0x0381: 'Glow plug 2', 0x0382: 'Glow plug 3',
-  0x0383: 'Glow plug 4', 0x0384: 'Glow plug 5',
-  0x0100: 'MAF sensor', 0x0105: 'Inlet air temp', 0x0110: 'Coolant temp high',
-  0x0115: 'Coolant temp low', 0x0120: 'Throttle position', 0x0235: 'Boost sensor',
-  0x0400: 'EGR fault', 0x0500: 'Speed sensor', 0x0560: 'System voltage',
-  0x0340: 'Crank sensor', 0x0341: 'Cam sensor',
-};
-
-function _dtcDesc(code) {
-  return _DTC_TABLE[code] || `Unknown (0x${code.toString(16).toUpperCase().padStart(4, '0')})`;
-}
+// fault_codes is a list of dicts from the backend:
+//   { code, description, count, expected }
+// where code is Nanocom notation e.g. "4-6"
 
 function _updateDTCList(faultCodes) {
   const list = document.getElementById('dtc-list');
@@ -1300,11 +1288,14 @@ function _updateDTCList(faultCodes) {
     list.innerHTML = '<div class="dtc-none">No faults stored</div>';
     return;
   }
-  list.innerHTML = faultCodes.map(code => {
-    const hex = code.toString(16).toUpperCase().padStart(4, '0');
-    return `<div class="dtc-row">
-      <span class="dtc-code">${hex}</span>
-      <span class="dtc-desc">${_dtcDesc(code)}</span>
+  list.innerHTML = faultCodes.map(f => {
+    const expectedTag = f.expected
+      ? ' <span class="dtc-expected">expected</span>'
+      : '';
+    return `<div class="dtc-row${f.expected ? ' dtc-row--expected' : ''}">
+      <span class="dtc-code">${f.code}</span>
+      <span class="dtc-desc">${f.description}${expectedTag}</span>
+      <span class="dtc-count">×${f.count}</span>
     </div>`;
   }).join('');
 }

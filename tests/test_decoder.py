@@ -80,24 +80,43 @@ class TestDecodeSpeed:
 
 class TestDecodeFaults:
     def test_vehicle_confirmed_two_faults(self):
-        """Vehicle-confirmed: 1D BB 0C 84 = two stored faults."""
+        """Vehicle-confirmed: 1D BB 0C 84 = two faults.
+        0x1D=29: group=4 sub=6 = ambient air temp (L), Defender false positive
+        0x0C=12: group=2 sub=5 = reference voltage (L), Defender false positive
+        """
         result = decode_faults(b'\x1D\xBB\x0C\x84')
-        assert result == [0x1DBB, 0x0C84]
+        assert len(result) == 2
+        assert result[0]['code'] == '4-6'
+        assert result[0]['count'] == 0xBB
+        assert result[0]['expected'] is True
+        assert result[1]['code'] == '2-5'
+        assert result[1]['count'] == 0x84
+        assert result[1]['expected'] is True
 
     def test_no_faults(self):
         assert decode_faults(b'') == []
 
     def test_single_fault(self):
-        assert decode_faults(b'\x1D\xBB') == [0x1DBB]
+        result = decode_faults(b'\x1D\xBB')
+        assert len(result) == 1
+        assert result[0]['code'] == '4-6'
+        assert result[0]['count'] == 0xBB
 
-    def test_zero_code_filtered(self):
-        """Zero codes should be filtered out."""
-        assert decode_faults(b'\x00\x00\x1D\xBB') == [0x1DBB]
+    def test_all_pairs_decoded(self):
+        """All 2-byte pairs are decoded — no zero filtering."""
+        result = decode_faults(b'\x00\x01\x1D\xBB')
+        assert len(result) == 2
 
     def test_odd_byte_count(self):
         """Trailing single byte is ignored (need pairs)."""
         result = decode_faults(b'\x1D\xBB\x0C')
-        assert result == [0x1DBB]
+        assert len(result) == 1
+        assert result[0]['code'] == '4-6'
+
+    def test_description_present(self):
+        result = decode_faults(b'\x1D\xBB')
+        assert 'description' in result[0]
+        assert len(result[0]['description']) > 0
 
 
 # ── Temperature Decoders ────────────────────────────────────────────────────

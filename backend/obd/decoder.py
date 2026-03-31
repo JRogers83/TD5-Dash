@@ -164,14 +164,22 @@ def decode_throttle(payload: bytes) -> Optional[float]:
 
 
 # ── PID 0x20 — Stored fault codes ────────────────────────────────────────────
-# Payload: variable (2 bytes per fault code).
-# [CONFIRMED] Vehicle returned 4 bytes: 1D BB 0C 84 = two stored faults.
+# Payload: 2-byte pairs — [fault_index_byte][occurrence_count_byte]
+# [CONFIRMED] Vehicle returned 4 bytes: 1D BB 0C 84
+#   → fault 0x1D (index 29) count 0xBB (187) = group 4 sub 6 = ambient air temp (L)
+#   → fault 0x0C (index 12) count 0x84 (132) = group 2 sub 5 = reference voltage (L)
+# Both are known Defender EU2 false positives (no 4-wire AAT, benign ref voltage).
+# Encoding: group = fault_index // 8 + 1, sub = fault_index % 8 + 1
 
-def decode_faults(payload: bytes) -> list[int]:
-    """Decode stored fault codes as a list of 16-bit DTC values."""
-    codes = []
-    for i in range(0, len(payload) - 1, 2):
-        code = (payload[i] << 8) | payload[i + 1]
-        if code != 0x0000:
-            codes.append(code)
-    return codes
+def decode_faults(payload: bytes) -> list[dict]:
+    """
+    Decode stored fault codes from a PID 0x20 response.
+
+    Returns a list of fault dicts with keys:
+        code        — Nanocom notation e.g. "4-6"
+        description — human-readable fault text
+        count       — occurrence count logged by ECU
+        expected    — True if known Defender false positive
+    """
+    from .dtc_lookup import decode_faults as _decode
+    return _decode(payload)
