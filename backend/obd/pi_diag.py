@@ -193,13 +193,35 @@ def _run_test(
             passed += 1
         else:
             emit(3, "running")
-            try:
-                conn = KLineConnection(FTDI_URL)
-                conn.open()   # fast-init pulse + StartCommunication
-                emit(3, "pass", "Fast-init OK  |  StartCommunication accepted")
-                passed += 1
-            except Exception as exc:
-                emit(3, "fail", str(exc))
+            _MAX_RETRIES = 5
+            _RETRY_DELAY = 5.0
+            last_exc: Exception | None = None
+            for attempt in range(1, _MAX_RETRIES + 1):
+                try:
+                    if attempt > 1:
+                        log.info("Fast-init attempt %d/%d (retrying in %.0f s)…",
+                                 attempt, _MAX_RETRIES, _RETRY_DELAY)
+                        time.sleep(_RETRY_DELAY)
+                    conn = KLineConnection(FTDI_URL)
+                    conn.open()   # fast-init pulse + StartCommunication
+                    emit(3, "pass",
+                         f"Fast-init OK  |  StartCommunication accepted"
+                         + (f" (attempt {attempt})" if attempt > 1 else ""))
+                    passed += 1
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    if conn:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        conn = None
+                    log.warning("Fast-init attempt %d/%d failed: %s",
+                                attempt, _MAX_RETRIES, exc)
+            if last_exc is not None:
+                emit(3, "fail", f"Failed after {_MAX_RETRIES} attempts: {last_exc}")
                 failed += 1
                 skip_from = 4
 

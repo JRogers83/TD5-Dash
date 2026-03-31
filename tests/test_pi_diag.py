@@ -140,11 +140,13 @@ def test_run_test_opens_own_connection_when_no_live_session(tmp_path):
     mock_usb.find_all.return_value = [("mock_device",)]  # Stage 1 passes
 
     with patch.dict("sys.modules", {"pyftdi.usbtools": mock_usb}), \
-         patch("obd.pi_diag.KLineConnection") as mock_conn_cls:
+         patch("obd.pi_diag.KLineConnection") as mock_conn_cls, \
+         patch("obd.pi_diag.time.sleep"):  # skip retry delays in tests
         mock_conn_cls.return_value.open = MagicMock(side_effect=Exception("no hardware"))
         pi_diag._run_test(manager, loop, log_path)
 
-    mock_conn_cls.return_value.open.assert_called_once()
+    # Retry logic attempts up to 5 times — verify at least one open() call was made
+    assert mock_conn_cls.return_value.open.call_count == 5
 
     loop.run_until_complete(asyncio.sleep(0))
     loop.close()
