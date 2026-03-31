@@ -645,31 +645,7 @@
                 <span>WS Clients: <strong id="diag-ws-count">—</strong></span>
                 <button class="wizard-btn" onclick="refreshDiagnostics()">Refresh</button>
               </div>
-            </div>
-            <div class="vdivider"></div>
-            <div class="diag-section">
-              <div class="stat-label">OBD Tests</div>
-              <div class="diag-tests">
-                <button class="relay-btn" onclick="runOBDTest('init')">
-                  <span class="relay-btn__label">Fast-Init Test</span>
-                </button>
-                <button class="relay-btn" onclick="runOBDTest('seedkey')">
-                  <span class="relay-btn__label">Seed-Key Test</span>
-                </button>
-                <button class="relay-btn" onclick="runOBDTest('pid')">
-                  <span class="relay-btn__label">PID Probe</span>
-                </button>
-                <button class="relay-btn relay-btn--primary" id="btn-full-obd-test" onclick="runFullOBDTest()">
-                  <span class="relay-btn__label" id="lbl-full-obd-test">Full OBD Test</span>
-                </button>
-              </div>
-              <div class="diag-result" id="diag-test-result"></div>
-              <!-- Stage progress panel — shown while test is running or complete -->
-              <div class="diag-stage-panel" id="diag-stage-panel" style="display:none">
-                <div class="diag-stage-list" id="diag-stage-list"></div>
-                <div class="diag-log-name" id="diag-log-name"></div>
-              </div>
-              <!-- Shutdown -->
+              <!-- Shutdown — pinned to bottom of left column, always visible -->
               <div class="diag-shutdown">
                 <button class="relay-btn relay-btn--danger" onclick="confirmShutdown()">
                   <span class="relay-btn__label">Shutdown Pi</span>
@@ -679,6 +655,20 @@
                   <button class="wizard-btn wizard-btn--danger" onclick="doShutdown()">Yes</button>
                   <button class="wizard-btn" onclick="cancelShutdown()">No</button>
                 </div>
+              </div>
+            </div>
+            <div class="vdivider"></div>
+            <div class="diag-section">
+              <div class="stat-label">OBD Diagnostic</div>
+              <div class="diag-tests">
+                <button class="relay-btn relay-btn--primary" id="btn-full-obd-test" onclick="runFullOBDTest()">
+                  <span class="relay-btn__label" id="lbl-full-obd-test">Full OBD Test</span>
+                </button>
+              </div>
+              <!-- Stage progress panel — shown while test is running or complete -->
+              <div class="diag-stage-panel" id="diag-stage-panel" style="display:none">
+                <div class="diag-stage-list" id="diag-stage-list"></div>
+                <div class="diag-log-name" id="diag-log-name"></div>
               </div>
             </div>
           </div>

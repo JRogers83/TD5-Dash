@@ -1689,11 +1689,6 @@ async function runFullOBDTest() {
   }
 }
 
-async function runOBDTest(test) {
-  const result = document.getElementById('diag-test-result');
-  result.textContent = `${test} test: not yet implemented (requires live OBD connection)`;
-}
-
 // ── WebSocket ──────────────────────────────────
 const connDot  = document.getElementById('conn-dot');
 const connTxt  = document.getElementById('txt-conn');
