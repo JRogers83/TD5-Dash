@@ -103,7 +103,7 @@ print('Obstruction:', round(s.get('fraction_obstructed', 0) * 100, 1), '%')
 
 ## Step 3 — Enable GPS (one-time, requires the Starlink app)
 
-The Starlink Mini has a built-in GPS receiver. GPS data is disabled by default and must be opted in via the app — this only needs to be done once, and the setting persists across reboots.
+The Starlink Mini has a built-in GPS receiver. GPS data is disabled by default and must be opted in via the app — this only needs to be done once, and the setting persists across reboots. Below is details of what I did, I believe this has changed in the past so it may change again. A bit of hunting in the app and you should find the debug data screen.
 
 Make sure your phone is connected to the Starlink Mini's Wi-Fi, then follow these steps:
 
