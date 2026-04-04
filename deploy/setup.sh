@@ -382,6 +382,102 @@ CHROMIUM_CONFIG="$SERVICE_HOME/.config/chromium"
 rm -rf "$CHROMIUM_CACHE" "$CHROMIUM_CONFIG"
 echo "  Chromium cache cleared."
 
+# ── Cloudflare Tunnel (optional) ──────────────────────────────────────────────
+echo ""
+read -r -p "▸ Set up Cloudflare Tunnel for remote access? [y/N] " _CF_ANSWER
+_CF_ANSWER="${_CF_ANSWER:-N}"
+
+if [[ "$_CF_ANSWER" =~ ^[Yy]$ ]]; then
+
+    # Install cloudflared via Cloudflare's official signed APT repository
+    if command -v cloudflared &>/dev/null; then
+        echo "  cloudflared already installed — skipping install."
+    else
+        echo "▸ Installing cloudflared..."
+        mkdir -p --mode=0755 /usr/share/keyrings
+        curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+            | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+        echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' \
+            | tee /etc/apt/sources.list.d/cloudflared.list
+        apt-get update -qq
+        apt-get install -y cloudflared
+        echo "  cloudflared installed."
+    fi
+
+    # Authenticate — opens a browser URL the user must visit
+    echo ""
+    echo "  ┌─────────────────────────────────────────────────────────────┐"
+    echo "  │  A URL will appear below. Open it in a browser and          │"
+    echo "  │  authorise this device with your Cloudflare account.        │"
+    echo "  │  The script will continue automatically once complete.       │"
+    echo "  └─────────────────────────────────────────────────────────────┘"
+    echo ""
+    sudo -u "$SERVICE_USER" cloudflared tunnel login
+
+    # Create the named tunnel (credentials stored in ~/.cloudflared/)
+    echo "▸ Creating tunnel 'td5-dash'..."
+    _CF_CREATE=$(sudo -u "$SERVICE_USER" cloudflared tunnel create td5-dash 2>&1)
+    echo "$_CF_CREATE"
+    _TUNNEL_ID=$(echo "$_CF_CREATE" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+
+    if [ -z "$_TUNNEL_ID" ]; then
+        echo "  ERROR: Could not extract tunnel ID from the output above."
+        echo "  Skipping Cloudflare tunnel configuration — run setup again to retry."
+    else
+        echo "  Tunnel ID: $_TUNNEL_ID"
+
+        # Prompt for hostnames
+        echo ""
+        read -r -p "  Dashboard hostname (e.g. td5dash.yourdomain.com): " _CF_DASH_HOST
+        read -r -p "  SSH hostname (e.g. ssh.td5dash.yourdomain.com, Enter to skip): " _CF_SSH_HOST
+
+        # Copy credentials to /etc/cloudflared so the service can always read them
+        CF_DIR="/etc/cloudflared"
+        mkdir -p "$CF_DIR"
+        _CREDS_SRC="$SERVICE_HOME/.cloudflared/${_TUNNEL_ID}.json"
+        _CREDS_DEST="$CF_DIR/${_TUNNEL_ID}.json"
+        cp "$_CREDS_SRC" "$_CREDS_DEST"
+
+        # Write config.yml
+        {
+            echo "tunnel: ${_TUNNEL_ID}"
+            echo "credentials-file: ${_CREDS_DEST}"
+            echo ""
+            echo "ingress:"
+            echo "  - hostname: ${_CF_DASH_HOST}"
+            echo "    service: http://localhost:8000"
+            if [ -n "$_CF_SSH_HOST" ]; then
+                echo "  - hostname: ${_CF_SSH_HOST}"
+                echo "    service: ssh://localhost:22"
+            fi
+            echo "  - service: http_status:404"
+        } > "$CF_DIR/config.yml"
+        echo "  Config written to $CF_DIR/config.yml"
+
+        # Create DNS CNAME records in Cloudflare
+        echo "▸ Creating DNS records..."
+        sudo -u "$SERVICE_USER" cloudflared tunnel route dns td5-dash "$_CF_DASH_HOST"
+        if [ -n "$_CF_SSH_HOST" ]; then
+            sudo -u "$SERVICE_USER" cloudflared tunnel route dns td5-dash "$_CF_SSH_HOST"
+        fi
+
+        # Install and start the cloudflared systemd service
+        echo "▸ Installing cloudflared service..."
+        cloudflared service install
+        systemctl enable cloudflared
+        systemctl start cloudflared
+        echo "  cloudflared service enabled and started."
+
+        echo ""
+        echo "  ✓ Cloudflare Tunnel active."
+        echo "    Dashboard : https://${_CF_DASH_HOST}"
+        if [ -n "$_CF_SSH_HOST" ]; then
+            echo "    SSH       : cloudflared access ssh --hostname ${_CF_SSH_HOST}"
+            echo "    (Requires cloudflared installed on your local machine)"
+        fi
+    fi
+fi
+
 # ── Done ───────────────────────────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════╗"
