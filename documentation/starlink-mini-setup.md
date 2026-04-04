@@ -105,11 +105,16 @@ print('Obstruction:', round(s.get('fraction_obstructed', 0) * 100, 1), '%')
 
 The Starlink Mini has a built-in GPS receiver. GPS data is disabled by default and must be opted in via the app — this only needs to be done once, and the setting persists across reboots.
 
-1. Open the **Starlink app** on your phone (iOS or Android)
-2. Make sure your phone is connected to the same Starlink Wi-Fi
-3. Go to **Settings → Advanced → Debug Data**
-4. Scroll to the **STARLINK LOCATION** section
-5. Toggle **"Allow access on local network"** → ON
+Make sure your phone is connected to the Starlink Mini's Wi-Fi, then follow these steps:
+
+1. Open the **Starlink app**
+2. Tap the **hamburger menu** (☰) in the top-left corner to open the full menu
+3. In the bottom-right of that screen, tap the **eye icon** (ⓘ) for information
+4. At the bottom of that screen, tap **Debug Data**
+5. Scroll to the bottom — the **STARLINK LOCATION** section is second from the bottom
+6. Toggle **"Allow access on local network"** → ON
+
+You can also confirm the setting is active here — the current latitude and longitude reported by the dish are shown directly beneath the toggle.
 
 Verify it's working:
 
