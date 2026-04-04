@@ -650,8 +650,10 @@ function handleStarlink(d) {
 
   const obsDot = document.getElementById('sl-obstruction-dot');
   const obsTxt = document.getElementById('sl-obstruction-txt');
-  obsDot.className  = `status-dot ${d.obstructed ? 'warn' : 'on'}`;
-  obsTxt.textContent = d.obstructed ? `Blocked` : `Clear`;
+  // Dot: red = currently blocked, amber = historical obstruction >0, green = clear
+  obsDot.className  = `status-dot ${d.obstructed ? 'red' : d.obstruction_pct > 0 ? 'warn' : 'on'}`;
+  // Text: show percentage if any obstruction exists, otherwise "Clear"
+  obsTxt.textContent = d.obstruction_pct > 0 ? `${d.obstruction_pct}%` : 'Clear';
 
   // Stats grid
   const isLive = d.state === 'connected';
