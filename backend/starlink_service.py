@@ -154,8 +154,8 @@ def _poll_status(ctx) -> dict:
         "up_mbps":         round(s.get("uplink_throughput_bps",   0) / 1_000_000, 1),
         "latency_ms":      round(s.get("pop_ping_latency_ms",      0)),
         "ping_drop_pct":   round(s.get("pop_ping_drop_rate",       0) * 100, 1),
-        "obstructed":      bool(o.get("currently_obstructed",      False)),
-        "obstruction_pct": round(o.get("fraction_obstructed",      0)   * 100, 1),
+        "obstructed":      bool(s.get("currently_obstructed",      False)),   # hw-verified: in status, not obstruction
+        "obstruction_pct": round(s.get("fraction_obstructed",      0)   * 100, 1),
         "roaming":         bool(a.get("alert_roaming",             False)),
         "uptime_s":        int(s.get("uptime",                     0)),
         "alerts":          active_alerts,
