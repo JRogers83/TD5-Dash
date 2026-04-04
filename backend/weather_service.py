@@ -35,7 +35,8 @@ log = logging.getLogger(__name__)
 
 LAT              = float(os.getenv("WEATHER_LAT",  "52.6309"))
 LON              = float(os.getenv("WEATHER_LON",  "1.2974"))
-FETCH_INTERVAL_S  = int(os.getenv("WEATHER_FETCH_INTERVAL", "1800"))   # 30 min
+FETCH_INTERVAL_S  = int(os.getenv("WEATHER_FETCH_INTERVAL", "1800"))   # 30 min once data is cached
+STARTUP_RETRY_S   = 30    # retry every 30s until first successful fetch
 PUSH_INTERVAL_S   = 5     # re-broadcast cached data every 5 s so new clients get data quickly
 STALE_THRESHOLD_S = 300   # flag data as stale after 5 min without a successful fetch
 TIMEOUT_S         = 15
@@ -121,7 +122,11 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
     while True:
         now = asyncio.get_event_loop().time()
 
-        if now - last_fetch >= FETCH_INTERVAL_S:
+        # Before the first successful fetch use a short retry interval so the
+        # display populates quickly even if the network isn't ready at boot.
+        # After the first success switch to the normal 30-minute cadence.
+        interval = FETCH_INTERVAL_S if cached is not None else STARTUP_RETRY_S
+        if now - last_fetch >= interval:
             # Use live GPS coordinates if Starlink has a fix, else fall back to env vars
             lat = shared_state.gps_lat if shared_state.gps_lat is not None else LAT
             lon = shared_state.gps_lon if shared_state.gps_lon is not None else LON
@@ -137,9 +142,13 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
                     cached["current"]["weather_code"],
                 )
             else:
-                # Network unavailable — keep cached data, retry sooner than 30 min.
-                last_fetch = now - FETCH_INTERVAL_S + 300   # retry in 5 min
-                log.warning("Weather fetch failed — will retry in 5 min")
+                last_fetch = now  # will retry after interval (30s pre-data, 5min post-data)
+                if cached is None:
+                    log.warning("Weather fetch failed — retrying in %ds", STARTUP_RETRY_S)
+                else:
+                    # Has cached data — back off to 5 min rather than hammering the API
+                    last_fetch = now - FETCH_INTERVAL_S + 300
+                    log.warning("Weather fetch failed — will retry in 5 min")
 
         # Always broadcast every cycle so newly-connected clients get data
         # within PUSH_INTERVAL_S seconds.
