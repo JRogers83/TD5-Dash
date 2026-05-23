@@ -96,3 +96,15 @@ class TestStartValidation:
                         json={"mode": "single", "skill": 3})
         assert r.status_code == 500
         assert r.json()["detail"] == {"error": "wad_missing"}
+
+    def test_start_already_running_returns_409(self, client):
+        # Simulate a live launcher by injecting a fake Popen-like object
+        class FakeRunningProc:
+            def poll(self):
+                return None  # poll() == None means "still running"
+        game_service._launcher_proc = FakeRunningProc()
+
+        r = client.post("/system/game-mode/start",
+                        json={"mode": "single", "skill": 3})
+        assert r.status_code == 409
+        assert r.json()["detail"] == {"error": "already_running"}
