@@ -17,6 +17,8 @@ import signal
 import subprocess
 from pathlib import Path
 
+import psutil
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -98,6 +100,9 @@ async def start(req: StartRequest) -> dict:
     # Clear stale error from previous run
     _last_error = None
 
+    # Freeze the Chromium kiosk tree
+    _freeze_chromium_tree()
+
     # Launch
     # NOTE: start_new_session=True makes the launcher a session leader, so
     # PID == PGID. This is what makes os.killpg(proc.pid, ...) work in stop().
@@ -157,8 +162,46 @@ async def _stop_internal() -> None:
             except ProcessLookupError:
                 pass
 
-        # Chromium tree unfreeze and Spotify resume are added in later tasks.
+        _unfreeze_chromium_tree()
+
+        # Spotify resume is added in a later task.
 
         if _watcher_task is not None and not _watcher_task.done():
             _watcher_task.cancel()
         _watcher_task = None
+
+
+def _freeze_chromium_tree() -> None:
+    """SIGSTOP the kiosk Chromium process and all its children.
+
+    Tree-walking is unconditional: Chromium's renderer/GPU/utility children
+    sometimes don't fully idle on parent-only SIGSTOP. Suspending each is safe
+    and avoids that ambiguity.
+    """
+    pid = shared_state.chromium_pid
+    if pid is None:
+        return
+    try:
+        parent = psutil.Process(pid)
+        for proc in [parent] + parent.children(recursive=True):
+            try:
+                proc.suspend()
+            except psutil.NoSuchProcess:
+                pass
+    except psutil.NoSuchProcess:
+        pass
+
+
+def _unfreeze_chromium_tree() -> None:
+    pid = shared_state.chromium_pid
+    if pid is None:
+        return
+    try:
+        parent = psutil.Process(pid)
+        for proc in [parent] + parent.children(recursive=True):
+            try:
+                proc.resume()
+            except psutil.NoSuchProcess:
+                pass
+    except psutil.NoSuchProcess:
+        pass

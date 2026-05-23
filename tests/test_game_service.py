@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import game_service
+import shared_state
 
 
 @pytest.fixture
@@ -272,3 +273,76 @@ class TestWatcherTask:
         client.post("/system/game-mode/start",
                     json={"mode": "single", "skill": 3})
         assert game_service._last_error is None
+
+
+class TestChromiumFreeze:
+    @pytest.fixture(autouse=True)
+    def wad_exists(self, monkeypatch, tmp_path):
+        wad = tmp_path / "doom.wad"
+        wad.write_bytes(b"FAKE_WAD")
+        monkeypatch.setattr(game_service, "_WAD_PATH", wad)
+
+    @pytest.fixture
+    def mock_popen(self, monkeypatch):
+        import threading
+        _never = threading.Event()
+        class FakeProc:
+            pid = 4242
+            def poll(self): return None
+            def wait(self, timeout=None):
+                _never.wait(timeout=0.05)
+                return 0
+        monkeypatch.setattr(game_service.subprocess, "Popen",
+                            lambda *a, **k: FakeProc())
+
+    def test_chromium_pid_none_skips_freeze(self, client, mock_popen, monkeypatch):
+        # PID discovery hasn't completed yet
+        monkeypatch.setattr(shared_state, "chromium_pid", None)
+        # Should not raise — the freeze path is a no-op
+        r = client.post("/system/game-mode/start",
+                        json={"mode": "single", "skill": 3})
+        assert r.status_code == 200
+
+    def test_freeze_walks_tree(self, client, mock_popen, monkeypatch):
+        suspended = []
+        class FakeProc:
+            def __init__(self, pid): self.pid_ = pid
+            def suspend(self): suspended.append(("suspend", self.pid_))
+            def resume(self):  suspended.append(("resume",  self.pid_))
+        class FakeParent:
+            def __init__(self, pid): self.pid_ = pid
+            def suspend(self): suspended.append(("suspend", self.pid_))
+            def resume(self):  suspended.append(("resume",  self.pid_))
+            def children(self, recursive=False):
+                return [FakeProc(1001), FakeProc(1002), FakeProc(1003)]
+        monkeypatch.setattr(shared_state, "chromium_pid", 1000)
+        monkeypatch.setattr(game_service.psutil, "Process",
+                            lambda pid: FakeParent(pid))
+
+        client.post("/system/game-mode/start",
+                    json={"mode": "single", "skill": 3})
+
+        suspends = [pid for action, pid in suspended if action == "suspend"]
+        assert suspends == [1000, 1001, 1002, 1003]
+
+    @pytest.mark.asyncio
+    async def test_unfreeze_walks_tree(self, monkeypatch):
+        actions = []
+        class FakeProc:
+            def __init__(self, pid): self.pid_ = pid
+            def resume(self): actions.append(("resume", self.pid_))
+            def suspend(self): pass
+        class FakeParent:
+            def __init__(self, pid): self.pid_ = pid
+            def resume(self): actions.append(("resume", self.pid_))
+            def suspend(self): pass
+            def children(self, recursive=False):
+                return [FakeProc(2001), FakeProc(2002)]
+        monkeypatch.setattr(shared_state, "chromium_pid", 2000)
+        monkeypatch.setattr(game_service.psutil, "Process",
+                            lambda pid: FakeParent(pid))
+
+        game_service._unfreeze_chromium_tree()
+
+        resumes = [pid for action, pid in actions]
+        assert resumes == [2000, 2001, 2002]
