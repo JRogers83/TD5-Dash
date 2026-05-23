@@ -22,6 +22,9 @@ from pydantic import BaseModel
 
 import shared_state
 
+import logging
+log = logging.getLogger(__name__)
+
 router = APIRouter()
 
 # os.killpg is POSIX-only; provide a shim so tests can monkeypatch it on
@@ -31,7 +34,7 @@ if hasattr(os, "killpg"):
         os.killpg(pgid, sig)
 else:
     def _killpg(pgid: int, sig: int) -> None:  # pragma: no cover (Windows dev)
-        pass  # No-op on Windows; real deployments are Linux only
+        log.warning("_killpg called on Windows (pgid=%d, sig=%d) — no-op", pgid, sig)
 
 _REPO_DIR     = Path(__file__).resolve().parent.parent
 _WAD_PATH     = _REPO_DIR / "wads" / "doom.wad"

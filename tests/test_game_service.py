@@ -6,6 +6,7 @@ All tests use FastAPI's TestClient and monkeypatch out:
   - spotify_service       (no real Spotify HTTP calls)
   - psutil.Process        (no real process introspection)
 """
+import asyncio
 import os
 import pytest
 from fastapi import FastAPI
@@ -34,12 +35,14 @@ def reset_state():
     game_service._spotify_was_playing = False
     game_service._watcher_task = None
     game_service._last_error = None
+    game_service._stop_lock = asyncio.Lock()
     yield
     game_service._launcher_proc = None
     game_service._current_mode = None
     game_service._spotify_was_playing = False
     game_service._watcher_task = None
     game_service._last_error = None
+    game_service._stop_lock = asyncio.Lock()
 
 
 @pytest.fixture(autouse=True)
