@@ -87,6 +87,16 @@ def _parse(body: dict) -> dict:
     }
 
 
+# Module-level: holds the most recent successful Spotify payload so other
+# services (e.g. game_service) can check playback state without polling.
+_last_payload: dict | None = None
+
+
+def current_state() -> dict | None:
+    """Return the most recent broadcast payload, or None if nothing yet."""
+    return _last_payload
+
+
 async def broadcast_loop(manager: ConnectionManager) -> None:
     """Poll Spotify Web API and broadcast updates over the WebSocket hub."""
     if not spotify_auth.configured():
@@ -96,10 +106,9 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
             await asyncio.sleep(_IDLE_INTERVAL)
         return  # unreachable — satisfies type checkers
 
-    global _like_hold_until
+    global _like_hold_until, _last_payload
     _liked_track_id: str       = ""
     _liked_status:   bool      = False
-    _last_payload:   dict | None = None   # last successful player state
 
     async with httpx.AsyncClient() as client:
         while True:
