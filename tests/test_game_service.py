@@ -108,3 +108,61 @@ class TestStartValidation:
                         json={"mode": "single", "skill": 3})
         assert r.status_code == 409
         assert r.json()["detail"] == {"error": "already_running"}
+
+
+class TestStartHappyPath:
+    @pytest.fixture(autouse=True)
+    def wad_exists(self, monkeypatch, tmp_path):
+        wad = tmp_path / "doom.wad"
+        wad.write_bytes(b"FAKE_WAD")
+        monkeypatch.setattr(game_service, "_WAD_PATH", wad)
+
+    @pytest.fixture
+    def mock_popen(self, monkeypatch):
+        captured = {}
+        class FakeProc:
+            pid = 4242
+            def __init__(self, *a, **kw):
+                captured["args"] = a
+                captured["kwargs"] = kw
+            def poll(self): return None
+            def wait(self, timeout=None): return 0
+        monkeypatch.setattr(game_service.subprocess, "Popen", FakeProc)
+        return captured
+
+    def test_start_returns_ok(self, client, mock_popen):
+        r = client.post("/system/game-mode/start",
+                        json={"mode": "single", "skill": 3})
+        assert r.status_code == 200
+        assert r.json() == {"ok": True}
+
+    def test_start_passes_env_to_launcher(self, client, mock_popen):
+        client.post("/system/game-mode/start",
+                    json={"mode": "coop", "skill": 4})
+        env = mock_popen["kwargs"]["env"]
+        assert env["MODE"]  == "coop"
+        assert env["SKILL"] == "4"
+        assert "WAD" in env
+        assert env["WAD"].endswith("doom.wad")
+
+    def test_start_uses_new_session(self, client, mock_popen):
+        client.post("/system/game-mode/start",
+                    json={"mode": "single", "skill": 3})
+        assert mock_popen["kwargs"]["start_new_session"] is True
+
+    def test_start_sets_current_mode(self, client, mock_popen):
+        client.post("/system/game-mode/start",
+                    json={"mode": "deathmatch", "skill": 5})
+        r = client.get("/system/game-mode/status")
+        assert r.json()["running"] is True
+        assert r.json()["mode"] == "deathmatch"
+
+    def test_start_second_call_returns_409(self, client, mock_popen):
+        # First start succeeds
+        client.post("/system/game-mode/start",
+                    json={"mode": "single", "skill": 3})
+        # Second start while running returns 409
+        r = client.post("/system/game-mode/start",
+                        json={"mode": "single", "skill": 3})
+        assert r.status_code == 409
+        assert r.json()["detail"] == {"error": "already_running"}

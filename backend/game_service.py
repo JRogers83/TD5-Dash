@@ -86,5 +86,21 @@ async def start(req: StartRequest) -> dict:
     # Clear stale error from previous run
     _last_error = None
 
-    # The rest (Spotify pause, Chromium freeze, Popen, watcher) is added in later tasks.
-    raise HTTPException(501, {"error": "not_yet_implemented"})
+    # Launch
+    # NOTE: start_new_session=True makes the launcher a session leader, so
+    # PID == PGID. This is what makes os.killpg(proc.pid, ...) work in stop().
+    # Do not remove without rewriting the cleanup path.
+    env = {
+        **os.environ,
+        "MODE":  req.mode,
+        "WAD":   str(_WAD_PATH),
+        "SKILL": str(req.skill),
+    }
+    _launcher_proc = subprocess.Popen(
+        [str(_LAUNCHER)],
+        env=env,
+        start_new_session=True,
+    )
+    _current_mode = req.mode
+
+    return {"ok": True}
