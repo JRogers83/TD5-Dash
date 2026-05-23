@@ -36,3 +36,6 @@ data/logs/
 tools/td5_test_*.txt
 tools/td5_sweep_*.txt
 tools/td5_pc_diag_*.txt
+
+# Doom WADs are commercially licensed; never commit them.
+wads/*.wad

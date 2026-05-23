@@ -22,3 +22,7 @@ gps_lon: float | None = None
 # GPIO state (set by ignition_service / future GPIO service)
 override_mode: bool = False
 sidelights_on: bool = False
+
+# Chromium kiosk parent PID (set by main.py lifespan task once Chromium is running).
+# Used by game_service to SIGSTOP/SIGCONT the tree during Doom mode.
+chromium_pid: int | None = None
