@@ -119,14 +119,20 @@ class TestStartHappyPath:
 
     @pytest.fixture
     def mock_popen(self, monkeypatch):
+        import threading
         captured = {}
+        _never = threading.Event()  # never set → wait() blocks until timeout
         class FakeProc:
             pid = 4242
             def __init__(self, *a, **kw):
                 captured["args"] = a
                 captured["kwargs"] = kw
             def poll(self): return None
-            def wait(self, timeout=None): return 0
+            def wait(self, timeout=None):
+                # Block briefly then return 0 — simulates a process that exits
+                # only after the test has finished asserting.
+                _never.wait(timeout=0.05)
+                return 0
         monkeypatch.setattr(game_service.subprocess, "Popen", FakeProc)
         return captured
 
@@ -166,3 +172,100 @@ class TestStartHappyPath:
                         json={"mode": "single", "skill": 3})
         assert r.status_code == 409
         assert r.json()["detail"] == {"error": "already_running"}
+
+
+class TestStop:
+    @pytest.fixture(autouse=True)
+    def wad_exists(self, monkeypatch, tmp_path):
+        wad = tmp_path / "doom.wad"
+        wad.write_bytes(b"FAKE_WAD")
+        monkeypatch.setattr(game_service, "_WAD_PATH", wad)
+
+    def test_stop_when_not_running_returns_ok(self, client):
+        r = client.post("/system/game-mode/stop")
+        assert r.status_code == 200
+        assert r.json() == {"ok": True}
+
+    def test_stop_kills_process_group(self, client, monkeypatch):
+        killpg_calls = []
+        monkeypatch.setattr(game_service, "_killpg",
+                            lambda pid, sig: killpg_calls.append((pid, sig)))
+        # Inject a running mock proc
+        import signal
+        class RunningProc:
+            pid = 9999
+            def poll(self): return None
+            def wait(self, timeout=None): return 0
+        game_service._launcher_proc = RunningProc()
+
+        r = client.post("/system/game-mode/stop")
+        assert r.status_code == 200
+        assert (9999, signal.SIGTERM) in killpg_calls
+
+
+class TestExitCodeMapping:
+    def test_controllers_missing(self):
+        assert game_service._EXIT_CODE_MESSAGES[2] == "Controllers required for this mode"
+
+    def test_matchbox_failed(self):
+        assert game_service._EXIT_CODE_MESSAGES[3] == "Window manager failed; check journalctl"
+
+    def test_doom_failed(self):
+        assert game_service._EXIT_CODE_MESSAGES[4] == "Doom failed to start; check journalctl"
+
+    def test_unknown_code_not_in_dict(self):
+        # Default applied via .get(...) in _watch_for_exit
+        assert 99 not in game_service._EXIT_CODE_MESSAGES
+
+
+class TestWatcherTask:
+    @pytest.fixture(autouse=True)
+    def wad_exists(self, monkeypatch, tmp_path):
+        wad = tmp_path / "doom.wad"
+        wad.write_bytes(b"FAKE_WAD")
+        monkeypatch.setattr(game_service, "_WAD_PATH", wad)
+
+    @pytest.mark.asyncio
+    async def test_watcher_maps_exit_code_2(self, monkeypatch):
+        class FakeProc:
+            pid = 4242
+            def poll(self): return 2
+            def wait(self, timeout=None): return 2
+        monkeypatch.setattr(game_service, "_killpg", lambda *a, **k: None)
+        game_service._launcher_proc = FakeProc()
+        await game_service._watch_for_exit()
+        assert game_service._last_error == "Controllers required for this mode"
+
+    @pytest.mark.asyncio
+    async def test_watcher_maps_unknown_exit_code(self, monkeypatch):
+        class FakeProc:
+            pid = 4242
+            def poll(self): return 99
+            def wait(self, timeout=None): return 99
+        monkeypatch.setattr(game_service, "_killpg", lambda *a, **k: None)
+        game_service._launcher_proc = FakeProc()
+        await game_service._watch_for_exit()
+        assert game_service._last_error == "Game exited unexpectedly"
+
+    @pytest.mark.asyncio
+    async def test_watcher_clean_exit_no_error(self, monkeypatch):
+        class FakeProc:
+            pid = 4242
+            def poll(self): return 0
+            def wait(self, timeout=None): return 0
+        monkeypatch.setattr(game_service, "_killpg", lambda *a, **k: None)
+        game_service._launcher_proc = FakeProc()
+        await game_service._watch_for_exit()
+        assert game_service._last_error is None
+
+    def test_last_error_cleared_on_next_start(self, client, monkeypatch):
+        game_service._last_error = "Something broke"
+        class FakeProc:
+            pid = 4242
+            def poll(self): return None
+            def wait(self, timeout=None): return 0
+        monkeypatch.setattr(game_service.subprocess, "Popen",
+                            lambda *a, **k: FakeProc())
+        client.post("/system/game-mode/start",
+                    json={"mode": "single", "skill": 3})
+        assert game_service._last_error is None

@@ -24,6 +24,15 @@ import shared_state
 
 router = APIRouter()
 
+# os.killpg is POSIX-only; provide a shim so tests can monkeypatch it on
+# Windows and so the real Pi path calls the genuine syscall.
+if hasattr(os, "killpg"):
+    def _killpg(pgid: int, sig: int) -> None:  # pragma: no cover
+        os.killpg(pgid, sig)
+else:
+    def _killpg(pgid: int, sig: int) -> None:  # pragma: no cover (Windows dev)
+        pass  # No-op on Windows; real deployments are Linux only
+
 _REPO_DIR     = Path(__file__).resolve().parent.parent
 _WAD_PATH     = _REPO_DIR / "wads" / "doom.wad"
 _LAUNCHER     = _REPO_DIR / "games" / "doom" / "launcher.sh"
@@ -63,7 +72,7 @@ def status() -> dict:
 
 @router.post("/system/game-mode/start")
 async def start(req: StartRequest) -> dict:
-    global _launcher_proc, _current_mode, _last_error
+    global _launcher_proc, _current_mode, _last_error, _watcher_task
 
     # Distinguish dev environment from production misconfiguration
     if os.environ.get("DEV_MODE") == "1":
@@ -103,4 +112,50 @@ async def start(req: StartRequest) -> dict:
     )
     _current_mode = req.mode
 
+    # Watcher captures the launcher exit code → last_error
+    _watcher_task = asyncio.create_task(_watch_for_exit())
+
     return {"ok": True}
+
+
+@router.post("/system/game-mode/stop")
+async def stop_endpoint() -> dict:
+    await _stop_internal()
+    return {"ok": True}
+
+
+async def _watch_for_exit() -> None:
+    """Block until launcher exits, record exit code, then run teardown."""
+    global _last_error
+    if _launcher_proc is None:
+        return
+    rc = await asyncio.to_thread(_launcher_proc.wait)
+    if rc != 0:
+        _last_error = _EXIT_CODE_MESSAGES.get(rc, "Game exited unexpectedly")
+    await _stop_internal()
+
+
+async def _stop_internal() -> None:
+    """Idempotent teardown — guarded against concurrent calls from /stop + watcher."""
+    global _launcher_proc, _current_mode, _watcher_task
+
+    async with _stop_lock:
+        proc = _launcher_proc
+        _launcher_proc = None
+        _current_mode  = None
+
+        if proc is not None and proc.poll() is None:
+            try:
+                _killpg(proc.pid, signal.SIGTERM)
+                try:
+                    await asyncio.to_thread(proc.wait, timeout=3)
+                except subprocess.TimeoutExpired:
+                    _killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+        # Chromium tree unfreeze and Spotify resume are added in later tasks.
+
+        if _watcher_task is not None and not _watcher_task.done():
+            _watcher_task.cancel()
+        _watcher_task = None
