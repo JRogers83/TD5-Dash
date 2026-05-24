@@ -193,6 +193,11 @@ def _freeze_chromium_tree() -> None:
 
 
 def _unfreeze_chromium_tree() -> None:
+    """SIGCONT the kiosk Chromium process and all its children.
+
+    Mirror of _freeze_chromium_tree(). Called from _stop_internal() once
+    the launcher process group has been killed and Doom has exited.
+    """
     pid = shared_state.chromium_pid
     if pid is None:
         return

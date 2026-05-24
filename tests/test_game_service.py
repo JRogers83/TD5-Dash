@@ -323,6 +323,8 @@ class TestChromiumFreeze:
                     json={"mode": "single", "skill": 3})
 
         suspends = [pid for action, pid in suspended if action == "suspend"]
+        # Order is deterministic here because FakeParent.children() returns a
+        # fixed list — real psutil traversal order is not guaranteed.
         assert suspends == [1000, 1001, 1002, 1003]
 
     @pytest.mark.asyncio
