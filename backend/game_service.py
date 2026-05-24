@@ -168,8 +168,10 @@ async def _stop_internal() -> None:
         _unfreeze_chromium_tree()
 
         if _spotify_was_playing:
-            await _resume_spotify()
-            _spotify_was_playing = False
+            try:
+                await _resume_spotify()
+            finally:
+                _spotify_was_playing = False
 
         if _watcher_task is not None and not _watcher_task.done():
             _watcher_task.cancel()
@@ -218,15 +220,18 @@ def _unfreeze_chromium_tree() -> None:
 
 
 async def _pause_spotify_if_playing() -> bool:
-    """Pause Spotify if currently playing. Returns True if we paused it."""
+    """Pause Spotify if currently playing. Returns True only if we actually paused it."""
     import spotify_service
     state = spotify_service.current_state()
     if state and state.get("playing"):
-        await spotify_service.send_command("pause")
-        return True
+        ok = await spotify_service.send_command("pause")
+        return ok
     return False
 
 
 async def _resume_spotify() -> None:
+    """Resume Spotify playback. Caller is responsible for checking _spotify_was_playing."""
     import spotify_service
-    await spotify_service.send_command("play")
+    ok = await spotify_service.send_command("play")
+    if not ok:
+        log.warning("Spotify resume command failed")

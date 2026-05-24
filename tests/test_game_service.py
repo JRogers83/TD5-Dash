@@ -435,3 +435,16 @@ class TestSpotifyIntegration:
 
         await game_service._stop_internal()
         assert commands == []
+
+    def test_does_not_track_as_paused_if_command_fails(self, client, mock_popen, monkeypatch):
+        import spotify_service
+        async def failing_cmd(action): return False  # simulate auth/network failure
+        monkeypatch.setattr(spotify_service, "current_state",
+                            lambda: {"playing": True})
+        monkeypatch.setattr(spotify_service, "send_command", failing_cmd)
+
+        client.post("/system/game-mode/start",
+                    json={"mode": "single", "skill": 3})
+        # Even though we tried to pause, the command failed, so we must NOT track
+        # this as our doing — otherwise a spurious resume fires on Doom exit.
+        assert game_service._spotify_was_playing is False
