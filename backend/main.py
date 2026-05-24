@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import db
+import game_service
 import spotify_service
 import system_service
 from ws_hub import ConnectionManager
@@ -91,10 +92,50 @@ def _clear_chromium_cache() -> None:
             shutil.rmtree(p, ignore_errors=True)
 
 
+async def _discover_chromium_pid() -> None:
+    """Locate the kiosk Chromium parent process. Retries every second for up to 30 s.
+
+    On first success, stores the PID in shared_state.chromium_pid. Gives up silently
+    after the deadline — game_service degrades gracefully (Doom on top of Chromium
+    instead of freeze, visually janky but functional).
+    """
+    import shared_state
+    import psutil
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
+        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+            try:
+                if proc.info["name"] != "chromium":
+                    continue
+                cmd = proc.info.get("cmdline") or []
+                if "--kiosk" in cmd:
+                    shared_state.chromium_pid = proc.info["pid"]
+                    log.info("Chromium kiosk PID discovered: %d", proc.info["pid"])
+                    return
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        await asyncio.sleep(1.0)
+    log.warning("Chromium kiosk PID not found within 30 s; Doom mode will degrade")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
     db.purge_old_history()
+
+    # Defensive: if a previous backend run crashed mid-Doom, Chromium may still be
+    # SIGSTOPped, an orphan launcher may be running, and PulseAudio remap sinks
+    # may be loaded. Clean these up before doing anything else.
+    # SIGCONT by binary name catches the whole Chromium tree; harmless if already running.
+    subprocess.run(["pkill", "-CONT", "-x", "chromium"], check=False)
+    subprocess.run(["pkill", "-f", "games/doom/launcher.sh"], check=False)
+    subprocess.run(
+        "pactl list short modules 2>/dev/null "
+        "| awk -F'\\t' '$3 ~ /sink_name=doom_p[12]/ { print $1 }' "
+        "| xargs -r -n1 pactl unload-module",
+        shell=True, check=False,
+    )
+
     tasks = [
         asyncio.create_task(engine_loop(manager)),
         asyncio.create_task(victron_loop(manager)),
@@ -102,6 +143,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(system_loop(manager)),
         asyncio.create_task(starlink_loop(manager)),
         asyncio.create_task(weather_loop(manager)),
+        asyncio.create_task(_discover_chromium_pid()),
     ]
     yield
     for task in tasks:
@@ -421,6 +463,9 @@ async def system_shutdown() -> dict:
     asyncio.create_task(_delayed_shutdown())
     return {"ok": True, "shutting_down": True}
 
+
+# Game-mode router (before static catch-all).
+app.include_router(game_service.router)
 
 # Static files mount last so /ws, /api/*, /spotify/*, /system/* are matched first.
 app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="static")
