@@ -127,14 +127,18 @@ async def lifespan(app: FastAPI):
     # SIGSTOPped, an orphan launcher may be running, and PulseAudio remap sinks
     # may be loaded. Clean these up before doing anything else.
     # SIGCONT by binary name catches the whole Chromium tree; harmless if already running.
-    subprocess.run(["pkill", "-CONT", "-x", "chromium"], check=False)
-    subprocess.run(["pkill", "-f", "games/doom/launcher.sh"], check=False)
-    subprocess.run(
-        "pactl list short modules 2>/dev/null "
-        "| awk -F'\\t' '$3 ~ /sink_name=doom_p[12]/ { print $1 }' "
-        "| xargs -r -n1 pactl unload-module",
-        shell=True, check=False,
-    )
+    # Use try/except so missing binaries (Docker, dev) are silently ignored.
+    try:
+        subprocess.run(["pkill", "-CONT", "-x", "chromium"], check=False)
+        subprocess.run(["pkill", "-f", "games/doom/launcher.sh"], check=False)
+        subprocess.run(
+            "pactl list short modules 2>/dev/null "
+            "| awk -F'\\t' '$3 ~ /sink_name=doom_p[12]/ { print $1 }' "
+            "| xargs -r -n1 pactl unload-module",
+            shell=True, check=False,
+        )
+    except FileNotFoundError:
+        pass  # pkill / pactl not present in Docker / dev environments
 
     tasks = [
         asyncio.create_task(engine_loop(manager)),
