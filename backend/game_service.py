@@ -77,7 +77,7 @@ def status() -> dict:
 
 @router.post("/system/game-mode/start")
 async def start(req: StartRequest) -> dict:
-    global _launcher_proc, _current_mode, _last_error, _watcher_task
+    global _launcher_proc, _current_mode, _last_error, _watcher_task, _spotify_was_playing
 
     # Distinguish dev environment from production misconfiguration
     if os.environ.get("DEV_MODE") == "1":
@@ -99,6 +99,9 @@ async def start(req: StartRequest) -> dict:
 
     # Clear stale error from previous run
     _last_error = None
+
+    # Pause Spotify if playing (so its audio doesn't fight with Doom)
+    _spotify_was_playing = await _pause_spotify_if_playing()
 
     # Freeze the Chromium kiosk tree
     _freeze_chromium_tree()
@@ -145,7 +148,7 @@ async def _watch_for_exit() -> None:
 
 async def _stop_internal() -> None:
     """Idempotent teardown — guarded against concurrent calls from /stop + watcher."""
-    global _launcher_proc, _current_mode, _watcher_task
+    global _launcher_proc, _current_mode, _watcher_task, _spotify_was_playing
 
     async with _stop_lock:
         proc = _launcher_proc
@@ -164,7 +167,9 @@ async def _stop_internal() -> None:
 
         _unfreeze_chromium_tree()
 
-        # Spotify resume is added in a later task.
+        if _spotify_was_playing:
+            await _resume_spotify()
+            _spotify_was_playing = False
 
         if _watcher_task is not None and not _watcher_task.done():
             _watcher_task.cancel()
@@ -210,3 +215,18 @@ def _unfreeze_chromium_tree() -> None:
                 pass
     except psutil.NoSuchProcess:
         pass
+
+
+async def _pause_spotify_if_playing() -> bool:
+    """Pause Spotify if currently playing. Returns True if we paused it."""
+    import spotify_service
+    state = spotify_service.current_state()
+    if state and state.get("playing"):
+        await spotify_service.send_command("pause")
+        return True
+    return False
+
+
+async def _resume_spotify() -> None:
+    import spotify_service
+    await spotify_service.send_command("play")

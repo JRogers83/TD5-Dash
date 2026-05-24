@@ -348,3 +348,90 @@ class TestChromiumFreeze:
 
         resumes = [pid for action, pid in actions]
         assert resumes == [2000, 2001, 2002]
+
+
+class TestSpotifyIntegration:
+    @pytest.fixture(autouse=True)
+    def wad_exists(self, monkeypatch, tmp_path):
+        wad = tmp_path / "doom.wad"
+        wad.write_bytes(b"FAKE_WAD")
+        monkeypatch.setattr(game_service, "_WAD_PATH", wad)
+
+    @pytest.fixture
+    def mock_popen(self, monkeypatch):
+        import threading
+        _never = threading.Event()
+        class FakeProc:
+            pid = 4242
+            def poll(self): return None
+            def wait(self, timeout=None):
+                _never.wait(timeout=0.05)
+                return 0
+        monkeypatch.setattr(game_service.subprocess, "Popen",
+                            lambda *a, **k: FakeProc())
+
+    def test_pauses_spotify_when_playing(self, client, mock_popen, monkeypatch):
+        import spotify_service
+        commands = []
+        async def fake_cmd(action): commands.append(action); return True
+        monkeypatch.setattr(spotify_service, "current_state",
+                            lambda: {"playing": True})
+        monkeypatch.setattr(spotify_service, "send_command", fake_cmd)
+
+        client.post("/system/game-mode/start",
+                    json={"mode": "single", "skill": 3})
+        assert commands == ["pause"]
+        assert game_service._spotify_was_playing is True
+
+    def test_does_not_pause_when_not_playing(self, client, mock_popen, monkeypatch):
+        import spotify_service
+        commands = []
+        async def fake_cmd(action): commands.append(action); return True
+        monkeypatch.setattr(spotify_service, "current_state",
+                            lambda: {"playing": False})
+        monkeypatch.setattr(spotify_service, "send_command", fake_cmd)
+
+        client.post("/system/game-mode/start",
+                    json={"mode": "single", "skill": 3})
+        assert commands == []
+        assert game_service._spotify_was_playing is False
+
+    @pytest.mark.asyncio
+    async def test_resumes_only_if_was_playing(self, monkeypatch):
+        import spotify_service
+        commands = []
+        async def fake_cmd(action): commands.append(action); return True
+        monkeypatch.setattr(spotify_service, "send_command", fake_cmd)
+
+        # Set state as if a paused-by-game session is active
+        class FakeProc:
+            pid = 4242
+            def poll(self): return None
+            def wait(self, timeout=None): return 0
+        game_service._launcher_proc = FakeProc()
+        game_service._spotify_was_playing = True
+        monkeypatch.setattr(game_service, "_killpg", lambda *a, **k: None)
+        monkeypatch.setattr(shared_state, "chromium_pid", None)
+
+        await game_service._stop_internal()
+        assert commands == ["play"]
+        assert game_service._spotify_was_playing is False
+
+    @pytest.mark.asyncio
+    async def test_does_not_resume_if_not_paused_by_game(self, monkeypatch):
+        import spotify_service
+        commands = []
+        async def fake_cmd(action): commands.append(action); return True
+        monkeypatch.setattr(spotify_service, "send_command", fake_cmd)
+
+        class FakeProc:
+            pid = 4242
+            def poll(self): return None
+            def wait(self, timeout=None): return 0
+        game_service._launcher_proc = FakeProc()
+        game_service._spotify_was_playing = False
+        monkeypatch.setattr(game_service, "_killpg", lambda *a, **k: None)
+        monkeypatch.setattr(shared_state, "chromium_pid", None)
+
+        await game_service._stop_internal()
+        assert commands == []
