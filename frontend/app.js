@@ -1755,5 +1755,9 @@ function connect() {
     if (wotEl && settings.throttle_wot) wotEl.textContent = parseFloat(settings.throttle_wot).toFixed(1);
   } catch (_) {}
 
+  document.getElementById("tile-gamemode")?.addEventListener("click", () => {
+    window.location.href = "/game.html";
+  });
+
   connect();
 })();
