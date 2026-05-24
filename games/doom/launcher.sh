@@ -84,6 +84,7 @@ COMMON_OPTS="-iwad $WAD -nograbmouse -skill $SKILL"
 
 case "$MODE" in
     single)
+        # shellcheck disable=SC2086
         $P1_PULSE_PREFIX chocolate-doom $COMMON_OPTS \
             -window -geometry 640x400+320+0 \
             -joystick 0 &
@@ -91,16 +92,20 @@ case "$MODE" in
     coop)
         chocolate-doom-server -deathmatch 0 -nodes 2 -port 5029 &
         sleep 0.3
+        # shellcheck disable=SC2086
         $P1_PULSE_PREFIX chocolate-doom $COMMON_OPTS -connect 127.0.0.1:5029 \
             -window -geometry 640x400+0+0 -joystick 0 &
+        # shellcheck disable=SC2086
         $P2_PULSE_PREFIX chocolate-doom $COMMON_OPTS -connect 127.0.0.1:5029 \
             -window -geometry 640x400+640+0 -joystick 1 &
         ;;
     deathmatch)
         chocolate-doom-server -deathmatch 1 -nodes 2 -port 5029 &
         sleep 0.3
+        # shellcheck disable=SC2086
         $P1_PULSE_PREFIX chocolate-doom $COMMON_OPTS -connect 127.0.0.1:5029 \
             -window -geometry 640x400+0+0 -joystick 0 &
+        # shellcheck disable=SC2086
         $P2_PULSE_PREFIX chocolate-doom $COMMON_OPTS -connect 127.0.0.1:5029 \
             -window -geometry 640x400+640+0 -joystick 1 &
         ;;
