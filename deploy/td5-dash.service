@@ -7,6 +7,7 @@ Type=simple
 User=__USER__
 WorkingDirectory=__REPO_DIR__/backend
 EnvironmentFile=__REPO_DIR__/.env
+# Must match the X display number in deploy/xinitrc (xinit ... -- :0).
 Environment="DISPLAY=:0"
 ExecStart=__REPO_DIR__/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=on-failure

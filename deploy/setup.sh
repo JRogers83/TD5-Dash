@@ -262,7 +262,8 @@ echo "  NOTE: PulseAudio loopback takes effect on next login/reboot."
 # ── Service user must be in 'input' group to read /dev/input/js* (controllers) ──
 echo "▸ Adding $SERVICE_USER to 'input' group..."
 usermod -aG input "$SERVICE_USER"
-echo "  Done (effective on next login)."
+echo "  Done. NOTE: on existing installs, log out and back in (or reboot)"
+echo "  for this to take effect — 'systemctl restart td5-dash' alone is NOT sufficient."
 
 # ── Sudoers: passwordless commands for the service user ───────────────────────
 # restart td5-dash: required for OTA update endpoint (POST /system/update)
