@@ -1279,6 +1279,11 @@ document.getElementById('tile-faults').addEventListener('click', () => {
   NAV.navigateTo(0, 1);  // Engine view, layer 1 (Engine Detail)
 });
 
+// ── Game Mode tile navigation ────────────────────
+document.getElementById("tile-gamemode").addEventListener("click", () => {
+  window.location.href = "/game.html";
+});
+
 // ── DTC detail (Engine layer 1) ─────────────────
 // fault_codes is a list of dicts from the backend:
 //   { code, description, count, expected }
@@ -1754,10 +1759,6 @@ function connect() {
     if (idleEl && settings.throttle_idle) idleEl.textContent = parseFloat(settings.throttle_idle).toFixed(1);
     if (wotEl && settings.throttle_wot) wotEl.textContent = parseFloat(settings.throttle_wot).toFixed(1);
   } catch (_) {}
-
-  document.getElementById("tile-gamemode")?.addEventListener("click", () => {
-    window.location.href = "/game.html";
-  });
 
   connect();
 })();
