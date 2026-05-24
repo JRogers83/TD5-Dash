@@ -1736,6 +1736,27 @@ function connect() {
   ws.onerror = () => ws.close();
 }
 
+// ── Doom error toast ────────────────────────────
+// Reads any error stashed by game.html on abnormal exit and shows it as a
+// transient, tap-to-dismiss toast so the user isn't left wondering why Doom
+// closed unexpectedly (e.g. "Controllers required for this mode").
+(function checkDoomLastError() {
+  const msg = sessionStorage.getItem("doom_last_error");
+  if (!msg) return;
+  sessionStorage.removeItem("doom_last_error");
+
+  const toast = document.createElement("div");
+  toast.className = "doom-toast";
+  toast.textContent = msg;
+  toast.addEventListener("click", () => toast.remove());
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add("fading");
+    setTimeout(() => toast.remove(), 300);
+  }, 5000);
+})();
+
 // ── Startup: fetch pages, init nav, connect WS ──
 (async function _startup() {
   let pageFlags = {};
