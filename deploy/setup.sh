@@ -36,7 +36,12 @@ apt-get install -y --no-install-recommends \
     unclutter \
     plymouth \
     plymouth-themes \
-    curl
+    curl \
+    chocolate-doom \
+    xdotool \
+    python3-gi \
+    gir1.2-gtk-3.0 \
+    matchbox-window-manager
 
 # ── Python virtualenv ──────────────────────────────────────────────────────────
 echo "▸ Setting up Python venv..."
@@ -253,6 +258,11 @@ fi
 systemctl restart raspotify
 echo "  Raspotify reconfigured to output via td5_sink."
 echo "  NOTE: PulseAudio loopback takes effect on next login/reboot."
+
+# ── Service user must be in 'input' group to read /dev/input/js* (controllers) ──
+echo "▸ Adding $SERVICE_USER to 'input' group..."
+usermod -aG input "$SERVICE_USER"
+echo "  Done (effective on next login)."
 
 # ── Sudoers: passwordless commands for the service user ───────────────────────
 # restart td5-dash: required for OTA update endpoint (POST /system/update)
