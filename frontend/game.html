@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Doom — TD5 Dash</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: system-ui, sans-serif;
+         width: 1280px; height: 400px; overflow: hidden;
+         display: flex; }
+  .col { padding: 8px; }
+  .col-mode  { flex: 0 0 480px; }
+  .col-skill { flex: 0 0 480px; }
+  .col-launch { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .grid { display: grid; gap: 8px; }
+  .grid-mode  { grid-template-columns: 1fr; }
+  .grid-skill { grid-template-columns: 1fr; }
+  .stat-tile.selected { border-color: var(--c-green); }
+  .launch-tile { background: var(--c-green); color: #000; cursor: pointer;
+                 flex: 1; display: flex; align-items: center; justify-content: center;
+                 font-size: 36px; font-weight: bold; }
+  .back-tile   { background: var(--surface); cursor: pointer; padding: 12px;
+                 text-align: center; }
+  .error-banner { background: var(--c-red); color: #000; padding: 8px;
+                  font-weight: bold; display: none; }
+  .error-banner.shown { display: block; }
+  #running-screen { display: none; width: 100%; height: 100%;
+                    background: #000; color: var(--text);
+                    align-items: center; justify-content: center;
+                    font-size: 48px; letter-spacing: 0.2em; }
+  #running-screen.shown { display: flex; }
+  .launcher.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="launcher" id="launcher">
+  <div class="col col-mode">
+    <div class="stat-label">Mode</div>
+    <div class="grid grid-mode">
+      <div class="stat-tile mode-tile" data-mode="single">
+        <div class="stat-value">SINGLE PLAYER</div>
+      </div>
+      <div class="stat-tile mode-tile" data-mode="coop">
+        <div class="stat-value">CO-OP</div>
+      </div>
+      <div class="stat-tile mode-tile" data-mode="deathmatch">
+        <div class="stat-value">DEATHMATCH</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col col-skill">
+    <div class="stat-label">Skill</div>
+    <div class="grid grid-skill">
+      <div class="stat-tile skill-tile" data-skill="1"><div class="stat-value">TOO YOUNG TO DIE</div></div>
+      <div class="stat-tile skill-tile" data-skill="2"><div class="stat-value">HEY NOT TOO ROUGH</div></div>
+      <div class="stat-tile skill-tile" data-skill="3"><div class="stat-value">HURT ME PLENTY</div></div>
+      <div class="stat-tile skill-tile" data-skill="4"><div class="stat-value">ULTRA-VIOLENCE</div></div>
+      <div class="stat-tile skill-tile" data-skill="5"><div class="stat-value">NIGHTMARE</div></div>
+    </div>
+  </div>
+
+  <div class="col col-launch">
+    <div class="error-banner" id="error-banner"></div>
+    <div class="launch-tile" id="launch-btn">LAUNCH</div>
+    <div class="back-tile" id="back-btn">BACK</div>
+  </div>
+</div>
+
+<div id="running-screen">GAME RUNNING</div>
+
+<script>
+let mode  = "single";
+let skill = 3;
+
+function selectTile(group, value) {
+  document.querySelectorAll(`.${group}-tile`).forEach(t => t.classList.remove("selected"));
+  document.querySelector(`.${group}-tile[data-${group}="${value}"]`).classList.add("selected");
+}
+
+selectTile("mode", mode);
+selectTile("skill", String(skill));
+
+document.querySelectorAll(".mode-tile").forEach(t => {
+  t.addEventListener("click", () => { mode = t.dataset.mode; selectTile("mode", mode); });
+});
+document.querySelectorAll(".skill-tile").forEach(t => {
+  t.addEventListener("click", () => { skill = Number(t.dataset.skill); selectTile("skill", String(skill)); });
+});
+
+document.getElementById("back-btn").addEventListener("click", () => {
+  window.location.href = "/";
+});
+
+function showError(msg) {
+  const banner = document.getElementById("error-banner");
+  banner.textContent = msg;
+  banner.classList.add("shown");
+}
+
+function clearError() {
+  document.getElementById("error-banner").classList.remove("shown");
+}
+
+async function pollStatusUntilStopped() {
+  while (true) {
+    await new Promise(r => setTimeout(r, 1000));
+    let r;
+    try { r = await fetch("/system/game-mode/status"); }
+    catch { continue; }
+    if (!r.ok) continue;
+    const s = await r.json();
+    if (!s.running) {
+      // Stash last_error in sessionStorage so the Settings page can show a toast
+      if (s.last_error) {
+        sessionStorage.setItem("doom_last_error", s.last_error);
+      }
+      window.location.href = "/#settings";
+      return;
+    }
+  }
+}
+
+document.getElementById("launch-btn").addEventListener("click", async () => {
+  clearError();
+  // Paint GAME RUNNING screen BEFORE the POST — this is what Chromium
+  // will be frozen with as the foreground image.
+  document.getElementById("launcher").classList.add("hidden");
+  document.getElementById("running-screen").classList.add("shown");
+
+  let r;
+  try {
+    r = await fetch("/system/game-mode/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, skill }),
+    });
+  } catch (e) {
+    // Network error — revert to launcher
+    document.getElementById("running-screen").classList.remove("shown");
+    document.getElementById("launcher").classList.remove("hidden");
+    showError("Network error: " + e.message);
+    return;
+  }
+
+  if (!r.ok) {
+    let err = "Unknown error";
+    try {
+      const body = await r.json();
+      err = body.detail?.error || JSON.stringify(body);
+    } catch {}
+    document.getElementById("running-screen").classList.remove("shown");
+    document.getElementById("launcher").classList.remove("hidden");
+    showError(err);
+    return;
+  }
+
+  // Success — poll until Doom exits
+  pollStatusUntilStopped();
+});
+</script>
+
+</body>
+</html>
