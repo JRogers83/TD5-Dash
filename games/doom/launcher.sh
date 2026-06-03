@@ -84,7 +84,7 @@ if [ "$MODE" != "single" ]; then
 fi
 
 # ── Launch chocolate-doom ─────────────────────────────────────────────
-COMMON_OPTS="-iwad $WAD -nograbmouse -skill $SKILL"
+COMMON_OPTS="-iwad $WAD -config $SCRIPT_DIR/chocolate-doom.cfg -nograbmouse -skill $SKILL"
 
 case "$MODE" in
     single)
