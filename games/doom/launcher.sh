@@ -14,6 +14,10 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# chocolate-doom installs to /usr/games which is not in the systemd service PATH
+CHOCOLATE_DOOM=/usr/games/chocolate-doom
+CHOCOLATE_DOOM_SERVER=/usr/games/chocolate-doom-server
+
 SINK_P1_MOD=""
 SINK_P2_MOD=""
 
@@ -85,35 +89,35 @@ COMMON_OPTS="-iwad $WAD -nograbmouse -skill $SKILL"
 case "$MODE" in
     single)
         # shellcheck disable=SC2086
-        $P1_PULSE_PREFIX chocolate-doom $COMMON_OPTS \
+        $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS \
             -window -geometry 640x400+320+0 \
             -joystick 0 &
         ;;
     coop)
-        chocolate-doom-server -deathmatch 0 -nodes 2 -port 5029 &
+        "$CHOCOLATE_DOOM_SERVER" -deathmatch 0 -nodes 2 -port 5029 &
         sleep 0.3
         # shellcheck disable=SC2086
-        $P1_PULSE_PREFIX chocolate-doom $COMMON_OPTS -connect 127.0.0.1:5029 \
+        $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
             -window -geometry 640x400+0+0 -joystick 0 &
         # shellcheck disable=SC2086
-        $P2_PULSE_PREFIX chocolate-doom $COMMON_OPTS -connect 127.0.0.1:5029 \
+        $P2_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
             -window -geometry 640x400+640+0 -joystick 1 &
         ;;
     deathmatch)
-        chocolate-doom-server -deathmatch 1 -nodes 2 -port 5029 &
+        "$CHOCOLATE_DOOM_SERVER" -deathmatch 1 -nodes 2 -port 5029 &
         sleep 0.3
         # shellcheck disable=SC2086
-        $P1_PULSE_PREFIX chocolate-doom $COMMON_OPTS -connect 127.0.0.1:5029 \
+        $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
             -window -geometry 640x400+0+0 -joystick 0 &
         # shellcheck disable=SC2086
-        $P2_PULSE_PREFIX chocolate-doom $COMMON_OPTS -connect 127.0.0.1:5029 \
+        $P2_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
             -window -geometry 640x400+640+0 -joystick 1 &
         ;;
 esac
 
 # Detect immediate chocolate-doom failure (within ~0.5 s of launch)
 sleep 0.5
-if ! pgrep -x chocolate-doom >/dev/null 2>&1; then
+if ! pgrep -f chocolate-doom >/dev/null 2>&1; then
     echo "ERROR: chocolate-doom failed to launch" >&2
     exit 4
 fi
@@ -122,7 +126,7 @@ fi
 MODE="$MODE" python3 "$SCRIPT_DIR/overlay.py" &
 
 # ── Wait for all chocolate-doom clients to exit ───────────────────────
-while pgrep -x chocolate-doom >/dev/null 2>&1; do
+while pgrep -f chocolate-doom >/dev/null 2>&1; do
     sleep 0.5
 done
 
