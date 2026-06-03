@@ -18,6 +18,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHOCOLATE_DOOM=/usr/games/chocolate-doom
 CHOCOLATE_DOOM_SERVER=/usr/games/chocolate-doom-server
 
+export SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1
+
 SINK_P1_MOD=""
 SINK_P2_MOD=""
 
