@@ -94,8 +94,9 @@ class TestStartValidation:
         assert r.json()["detail"] == {"error": "display_not_available"}
 
     def test_start_wad_missing(self, client, monkeypatch, tmp_path):
-        # Point the module's WAD path to a file that doesn't exist
-        monkeypatch.setattr(game_service, "_WAD_PATH", tmp_path / "nope.wad")
+        # Both override and FreeDoom fallback point to non-existent files
+        monkeypatch.setattr(game_service, "_WAD_OVERRIDE", tmp_path / "nope.wad")
+        monkeypatch.setattr(game_service, "_WAD_FREEDOOM", tmp_path / "nope2.wad")
         r = client.post("/system/game-mode/start",
                         json={"mode": "single", "skill": 3})
         assert r.status_code == 500
@@ -119,7 +120,7 @@ class TestStartHappyPath:
     def wad_exists(self, monkeypatch, tmp_path):
         wad = tmp_path / "doom.wad"
         wad.write_bytes(b"FAKE_WAD")
-        monkeypatch.setattr(game_service, "_WAD_PATH", wad)
+        monkeypatch.setattr(game_service, "_WAD_OVERRIDE", wad)
 
     @pytest.fixture
     def mock_popen(self, monkeypatch):
@@ -183,7 +184,7 @@ class TestStop:
     def wad_exists(self, monkeypatch, tmp_path):
         wad = tmp_path / "doom.wad"
         wad.write_bytes(b"FAKE_WAD")
-        monkeypatch.setattr(game_service, "_WAD_PATH", wad)
+        monkeypatch.setattr(game_service, "_WAD_OVERRIDE", wad)
 
     def test_stop_when_not_running_returns_ok(self, client):
         r = client.post("/system/game-mode/stop")
@@ -227,7 +228,7 @@ class TestWatcherTask:
     def wad_exists(self, monkeypatch, tmp_path):
         wad = tmp_path / "doom.wad"
         wad.write_bytes(b"FAKE_WAD")
-        monkeypatch.setattr(game_service, "_WAD_PATH", wad)
+        monkeypatch.setattr(game_service, "_WAD_OVERRIDE", wad)
 
     @pytest.mark.asyncio
     async def test_watcher_maps_exit_code_2(self, monkeypatch):
@@ -280,7 +281,7 @@ class TestChromiumFreeze:
     def wad_exists(self, monkeypatch, tmp_path):
         wad = tmp_path / "doom.wad"
         wad.write_bytes(b"FAKE_WAD")
-        monkeypatch.setattr(game_service, "_WAD_PATH", wad)
+        monkeypatch.setattr(game_service, "_WAD_OVERRIDE", wad)
 
     @pytest.fixture
     def mock_popen(self, monkeypatch):
@@ -355,7 +356,7 @@ class TestSpotifyIntegration:
     def wad_exists(self, monkeypatch, tmp_path):
         wad = tmp_path / "doom.wad"
         wad.write_bytes(b"FAKE_WAD")
-        monkeypatch.setattr(game_service, "_WAD_PATH", wad)
+        monkeypatch.setattr(game_service, "_WAD_OVERRIDE", wad)
 
     @pytest.fixture
     def mock_popen(self, monkeypatch):

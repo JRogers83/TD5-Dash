@@ -38,6 +38,7 @@ apt-get install -y --no-install-recommends \
     plymouth-themes \
     curl \
     chocolate-doom \
+    freedoom \
     xdotool \
     python3-gi \
     gir1.2-gtk-3.0 \
@@ -266,13 +267,15 @@ echo "  Done. NOTE: on existing installs, log out and back in (or reboot)"
 echo "  for this to take effect — 'systemctl restart td5-dash' alone is NOT sufficient."
 
 # ── Sudoers: passwordless commands for the service user ───────────────────────
-# restart td5-dash: required for OTA update endpoint (POST /system/update)
-# shutdown -h now:  required for shutdown endpoint (POST /system/shutdown)
-echo "▸ Configuring sudoers for service restart and shutdown..."
+# restart td5-dash:           required for OTA update endpoint (POST /system/update)
+# shutdown -h now:            required for shutdown endpoint (POST /system/shutdown)
+# apt-get install freedoom:   required for OTA update to install/upgrade freedoom
+echo "▸ Configuring sudoers for service restart, shutdown, and apt..."
 SUDOERS_FILE="/etc/sudoers.d/td5-dash"
 cat > "$SUDOERS_FILE" <<EOF
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart td5-dash
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y freedoom
 EOF
 chmod 440 "$SUDOERS_FILE"
 echo "  Sudoers entry written to $SUDOERS_FILE"

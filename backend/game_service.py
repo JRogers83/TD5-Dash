@@ -38,9 +38,10 @@ else:
     def _killpg(pgid: int, sig: int) -> None:  # pragma: no cover (Windows dev)
         log.warning("_killpg called on Windows (pgid=%d, sig=%d) — no-op", pgid, sig)
 
-_REPO_DIR     = Path(__file__).resolve().parent.parent
-_WAD_PATH     = _REPO_DIR / "wads" / "doom.wad"
-_LAUNCHER     = _REPO_DIR / "games" / "doom" / "launcher.sh"
+_REPO_DIR      = Path(__file__).resolve().parent.parent
+_WAD_OVERRIDE  = _REPO_DIR / "wads" / "doom.wad"
+_WAD_FREEDOOM  = Path("/usr/share/games/doom/freedoom1.wad")
+_LAUNCHER      = _REPO_DIR / "games" / "doom" / "launcher.sh"
 _VALID_MODES  = {"single", "coop", "deathmatch"}
 _VALID_SKILLS = {1, 2, 3, 4, 5}
 
@@ -94,7 +95,8 @@ async def start(req: StartRequest) -> dict:
         raise HTTPException(400, {"error": "invalid_mode"})
     if req.skill not in _VALID_SKILLS:
         raise HTTPException(400, {"error": "invalid_skill"})
-    if not _WAD_PATH.is_file():
+    wad_path = _WAD_OVERRIDE if _WAD_OVERRIDE.is_file() else _WAD_FREEDOOM
+    if not wad_path.is_file():
         raise HTTPException(500, {"error": "wad_missing"})
 
     # Clear stale error from previous run
@@ -113,7 +115,7 @@ async def start(req: StartRequest) -> dict:
     env = {
         **os.environ,
         "MODE":  req.mode,
-        "WAD":   str(_WAD_PATH),
+        "WAD":   str(wad_path),
         "SKILL": str(req.skill),
     }
     _launcher_proc = subprocess.Popen(

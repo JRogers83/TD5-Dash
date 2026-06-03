@@ -435,6 +435,12 @@ async def system_update() -> dict:
             capture_output=True,
         )
 
+    # apt install freedoom — idempotent; upgrades if a newer package is available
+    subprocess.run(
+        ["sudo", "apt-get", "install", "-y", "freedoom"],
+        capture_output=True,
+    )
+
     _clear_chromium_cache()
     asyncio.create_task(_delayed_restart())
 
