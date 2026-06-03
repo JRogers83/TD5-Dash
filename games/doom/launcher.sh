@@ -18,8 +18,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHOCOLATE_DOOM=/usr/games/chocolate-doom
 CHOCOLATE_DOOM_SERVER=/usr/games/chocolate-doom-server
 
-export SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1
-
 SINK_P1_MOD=""
 SINK_P2_MOD=""
 
@@ -85,35 +83,43 @@ if [ "$MODE" != "single" ]; then
     fi
 fi
 
+# ── joy2key: map joystick input to keyboard events ────────────────────
+# Bypasses SDL joystick support which is unreliable with generic controllers.
+python3 "$SCRIPT_DIR/joy2key.py" /dev/input/js0 &
+if [ "$MODE" != "single" ]; then
+    python3 "$SCRIPT_DIR/joy2key.py" /dev/input/js1 &
+fi
+sleep 0.2  # let uinput devices register before chocolate-doom opens
+
 # ── Launch chocolate-doom ─────────────────────────────────────────────
-COMMON_OPTS="-iwad $WAD -config $SCRIPT_DIR/chocolate-doom.cfg -nograbmouse -skill $SKILL"
+# -nojoy: disable SDL joystick (joy2key handles input via keyboard events)
+COMMON_OPTS="-iwad $WAD -nojoy -nograbmouse -skill $SKILL"
 
 case "$MODE" in
     single)
         # shellcheck disable=SC2086
         $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS \
-            -window -geometry 640x400+320+0 \
-            -joystick 0 &
+            -window -geometry 640x400+320+0 &
         ;;
     coop)
         "$CHOCOLATE_DOOM_SERVER" -deathmatch 0 -nodes 2 -port 5029 &
         sleep 0.3
         # shellcheck disable=SC2086
         $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
-            -window -geometry 640x400+0+0 -joystick 0 &
+            -window -geometry 640x400+0+0 &
         # shellcheck disable=SC2086
         $P2_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
-            -window -geometry 640x400+640+0 -joystick 1 &
+            -window -geometry 640x400+640+0 &
         ;;
     deathmatch)
         "$CHOCOLATE_DOOM_SERVER" -deathmatch 1 -nodes 2 -port 5029 &
         sleep 0.3
         # shellcheck disable=SC2086
         $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
-            -window -geometry 640x400+0+0 -joystick 0 &
+            -window -geometry 640x400+0+0 &
         # shellcheck disable=SC2086
         $P2_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
-            -window -geometry 640x400+640+0 -joystick 1 &
+            -window -geometry 640x400+640+0 &
         ;;
 esac
 

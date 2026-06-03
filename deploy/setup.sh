@@ -44,6 +44,12 @@ apt-get install -y --no-install-recommends \
     gir1.2-gtk-3.0 \
     matchbox-window-manager
 
+# ── uinput access for joy2key joystick mapper ──────────────────────────────────
+echo "▸ Configuring uinput access for joystick mapper..."
+echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' > /etc/udev/rules.d/99-td5-uinput.rules
+modprobe uinput 2>/dev/null || true
+udevadm control --reload-rules && udevadm trigger 2>/dev/null || true
+
 # ── Python virtualenv ──────────────────────────────────────────────────────────
 echo "▸ Setting up Python venv..."
 VENV="$REPO_DIR/.venv"
