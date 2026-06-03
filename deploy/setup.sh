@@ -39,6 +39,7 @@ apt-get install -y --no-install-recommends \
     curl \
     chocolate-doom \
     freedoom \
+    python3-evdev \
     xdotool \
     python3-gi \
     gir1.2-gtk-3.0 \
