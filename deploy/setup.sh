@@ -291,7 +291,7 @@ SUDOERS_FILE="/etc/sudoers.d/td5-dash"
 cat > "$SUDOERS_FILE" <<EOF
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart td5-dash
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
-$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y freedoom python3-evdev
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y freedoom openbox libsamplerate0
 EOF
 chmod 440 "$SUDOERS_FILE"
 echo "  Sudoers entry written to $SUDOERS_FILE"
