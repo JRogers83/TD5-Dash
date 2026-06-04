@@ -440,7 +440,7 @@ async def system_update() -> dict:
     # apt install game deps — idempotent; upgrades if newer packages are available
     subprocess.run(
         ["sudo", "apt-get", "install", "-y",
-         "freedoom", "openbox", "libsamplerate0"],
+         "freedoom", "openbox", "libsamplerate0", "python3-evdev"],
         capture_output=True,
     )
 
