@@ -12,3 +12,4 @@ xinitrc     text eol=lf
 *.min.js    binary
 games/doom/lzdoom binary
 games/doom/libzmusic.so.1 binary
+games/doom/*.pk3 binary
