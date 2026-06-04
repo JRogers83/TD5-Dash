@@ -420,12 +420,14 @@ async def system_update() -> dict:
     The service will restart ~1.5 s after this response is sent —
     callers should expect the connection to drop and handle it gracefully.
     """
-    # git pull
+    # git pull — abort if it fails so we don't restart with stale code
     git = subprocess.run(
         ["git", "-C", str(REPO_DIR), "pull"],
         capture_output=True, text=True,
     )
     git_out = git.stdout.strip() or git.stderr.strip() or "No output"
+    if git.returncode != 0:
+        raise HTTPException(500, {"error": "git_pull_failed", "output": git_out})
 
     # pip install (handles requirements changes; quiet to keep output clean)
     if VENV_PIP.exists():
