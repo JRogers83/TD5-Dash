@@ -88,25 +88,25 @@ case "$MODE" in
     coop)
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
-            +vid_defwidth 640 +vid_defheight 400 \
+            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 0 +win_y 0 \
             -host 2 -port 5029 &
         sleep 2.5
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
-            -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini \
-            +vid_defwidth 640 +vid_defheight 400 \
+            -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
+            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 0 \
             -connect 127.0.0.1:5029 &
         ;;
     deathmatch)
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
-            +vid_defwidth 640 +vid_defheight 400 \
+            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 0 +win_y 0 \
             -deathmatch -host 2 -port 5029 &
         sleep 2.5
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
-            -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini \
-            +vid_defwidth 640 +vid_defheight 400 \
+            -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
+            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 0 \
             -connect 127.0.0.1:5029 &
         ;;
 esac
