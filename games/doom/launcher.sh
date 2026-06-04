@@ -36,7 +36,7 @@ if [ "$MODE" != "single" ]; then
 fi
 
 # ── Window manager ────────────────────────────────────────────────────
-openbox --sm-disable &
+openbox --sm-disable --config-file "$SCRIPT_DIR/openbox-rc.xml" &
 sleep 0.3
 xsetroot -solid black 2>/dev/null || true
 
@@ -73,16 +73,18 @@ fi
 
 # ── Launch LZDoom ─────────────────────────────────────────────────────
 # shellcheck disable=SC2086
-COMMON_OPTS="-iwad $WAD -skill $SKILL -config $SCRIPT_DIR/lzdoom-p1.ini +vid_defwidth 640 +vid_defheight 400"
+COMMON_OPTS="-iwad $WAD -skill $SKILL -config $SCRIPT_DIR/lzdoom-p1.ini"
 
 case "$MODE" in
     single)
         # shellcheck disable=SC2086
-        SDL_VIDEO_WINDOW_POS="320,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS &
+        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
+            +vid_defwidth 1280 +vid_defheight 400 &
         ;;
     coop)
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
+            +vid_defwidth 640 +vid_defheight 400 \
             -host 2 -port 5029 &
         sleep 2.5
         # shellcheck disable=SC2086
@@ -94,6 +96,7 @@ case "$MODE" in
     deathmatch)
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
+            +vid_defwidth 640 +vid_defheight 400 \
             -deathmatch -host 2 -port 5029 &
         sleep 2.5
         # shellcheck disable=SC2086
