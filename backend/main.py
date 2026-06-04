@@ -435,9 +435,9 @@ async def system_update() -> dict:
             capture_output=True,
         )
 
-    # apt install freedoom — idempotent; upgrades if a newer package is available
+    # apt install game deps — idempotent; upgrades if newer packages are available
     subprocess.run(
-        ["sudo", "apt-get", "install", "-y", "freedoom"],
+        ["sudo", "apt-get", "install", "-y", "freedoom", "python3-evdev"],
         capture_output=True,
     )
 
