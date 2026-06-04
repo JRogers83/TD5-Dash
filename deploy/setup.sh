@@ -43,16 +43,22 @@ apt-get install -y --no-install-recommends \
     xdotool \
     python3-gi \
     gir1.2-gtk-3.0 \
-    matchbox-window-manager
+    matchbox-window-manager \
+    openbox \
+    libsamplerate0
 
-# ── uinput access for joy2key joystick mapper ──────────────────────────────────
-echo "▸ Configuring uinput access for joystick mapper..."
-echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' > /etc/udev/rules.d/99-td5-uinput.rules
-modprobe uinput 2>/dev/null || true
-udevadm control --reload-rules && udevadm trigger 2>/dev/null || true
-# Set permissions directly in case the udev rule hasn't taken effect yet
-chown root:input /dev/uinput 2>/dev/null || true
-chmod 660 /dev/uinput 2>/dev/null || true
+# ── ZMusic shared library (bundled with LZDoom) ────────────────────────────────
+echo "▸ Installing ZMusic shared library..."
+if [ -f "$REPO_DIR/games/doom/libzmusic.so.1" ]; then
+    cp "$REPO_DIR/games/doom/libzmusic.so.1" /usr/local/lib/libzmusic.so.1
+    ldconfig
+    echo "  libzmusic.so.1 installed to /usr/local/lib/"
+fi
+
+# ── LZDoom binary permissions ──────────────────────────────────────────────────
+if [ -f "$REPO_DIR/games/doom/lzdoom" ]; then
+    chmod +x "$REPO_DIR/games/doom/lzdoom"
+fi
 
 # ── Python virtualenv ──────────────────────────────────────────────────────────
 echo "▸ Setting up Python venv..."
