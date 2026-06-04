@@ -95,7 +95,7 @@ case "$MODE" in
         SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 0 \
-            -connect 127.0.0.1:5029 &
+            -join 127.0.0.1:5029 &
         ;;
     deathmatch)
         # shellcheck disable=SC2086
@@ -107,7 +107,7 @@ case "$MODE" in
         SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 0 \
-            -connect 127.0.0.1:5029 &
+            -join 127.0.0.1:5029 &
         ;;
 esac
 
