@@ -71,9 +71,13 @@ if [ "$MODE" != "single" ]; then
     fi
 fi
 
+# ── Copy INI files to /tmp so LZDoom's config writeback doesn't dirty the repo ──
+cp "$SCRIPT_DIR/lzdoom-p1.ini" /tmp/lzdoom-p1.ini
+cp "$SCRIPT_DIR/lzdoom-p2.ini" /tmp/lzdoom-p2.ini 2>/dev/null || true
+
 # ── Launch LZDoom ─────────────────────────────────────────────────────
 # shellcheck disable=SC2086
-COMMON_OPTS="-iwad $WAD -skill $SKILL -config $SCRIPT_DIR/lzdoom-p1.ini"
+COMMON_OPTS="-iwad $WAD -skill $SKILL -config /tmp/lzdoom-p1.ini"
 
 case "$MODE" in
     single)
@@ -89,7 +93,7 @@ case "$MODE" in
         sleep 2.5
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
-            -iwad $WAD -skill $SKILL -config $SCRIPT_DIR/lzdoom-p2.ini \
+            -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini \
             +vid_defwidth 640 +vid_defheight 400 \
             -connect 127.0.0.1:5029 &
         ;;
@@ -101,7 +105,7 @@ case "$MODE" in
         sleep 2.5
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
-            -iwad $WAD -skill $SKILL -config $SCRIPT_DIR/lzdoom-p2.ini \
+            -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini \
             +vid_defwidth 640 +vid_defheight 400 \
             -connect 127.0.0.1:5029 &
         ;;
