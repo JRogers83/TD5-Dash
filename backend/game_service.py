@@ -42,6 +42,7 @@ _REPO_DIR      = Path(__file__).resolve().parent.parent
 _WAD_OVERRIDE  = _REPO_DIR / "wads" / "doom.wad"
 _WAD_FREEDOOM  = Path("/usr/share/games/doom/freedoom1.wad")
 _LAUNCHER      = _REPO_DIR / "games" / "doom" / "launcher.sh"
+_LZDOOM        = _REPO_DIR / "games" / "doom" / "lzdoom"
 _VALID_MODES  = {"single", "coop", "deathmatch"}
 _VALID_SKILLS = {1, 2, 3, 4, 5}
 
@@ -55,9 +56,7 @@ _stop_lock = asyncio.Lock()
 
 # Launcher exit code → user-facing message
 _EXIT_CODE_MESSAGES = {
-    2: "Controllers required for this mode",
-    3: "Window manager failed; check journalctl",
-    4: "Doom failed to start; check journalctl",
+    1: "LZDoom exited with an error — check journalctl for details",
 }
 
 
@@ -98,6 +97,8 @@ async def start(req: StartRequest) -> dict:
     wad_path = _WAD_OVERRIDE if _WAD_OVERRIDE.is_file() else _WAD_FREEDOOM
     if not wad_path.is_file():
         raise HTTPException(500, {"error": "wad_missing"})
+    if not _LZDOOM.is_file():
+        raise HTTPException(500, {"error": "lzdoom_missing"})
 
     # Clear stale error from previous run
     _last_error = None
@@ -114,9 +115,10 @@ async def start(req: StartRequest) -> dict:
     # Do not remove without rewriting the cleanup path.
     env = {
         **os.environ,
-        "MODE":  req.mode,
-        "WAD":   str(wad_path),
-        "SKILL": str(req.skill),
+        "MODE":   req.mode,
+        "WAD":    str(wad_path),
+        "SKILL":  str(req.skill),
+        "LZDOOM": str(_LZDOOM),
     }
     _launcher_proc = subprocess.Popen(
         [str(_LAUNCHER)],

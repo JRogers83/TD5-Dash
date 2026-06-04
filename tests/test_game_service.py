@@ -115,12 +115,28 @@ class TestStartValidation:
         assert r.json()["detail"] == {"error": "already_running"}
 
 
+class TestLZDoomValidation:
+    def test_start_lzdoom_missing_returns_500(self, client, monkeypatch, tmp_path):
+        monkeypatch.setattr(game_service, "_WAD_OVERRIDE", tmp_path / "doom.wad")
+        wad = tmp_path / "freedoom1.wad"
+        wad.write_bytes(b"FAKE_WAD")
+        monkeypatch.setattr(game_service, "_WAD_FREEDOOM", wad)
+        monkeypatch.setattr(game_service, "_LZDOOM", tmp_path / "lzdoom")
+        r = client.post("/system/game-mode/start",
+                        json={"mode": "single", "skill": 3})
+        assert r.status_code == 500
+        assert r.json()["detail"] == {"error": "lzdoom_missing"}
+
+
 class TestStartHappyPath:
     @pytest.fixture(autouse=True)
     def wad_exists(self, monkeypatch, tmp_path):
         wad = tmp_path / "doom.wad"
         wad.write_bytes(b"FAKE_WAD")
         monkeypatch.setattr(game_service, "_WAD_OVERRIDE", wad)
+        lzdoom = tmp_path / "lzdoom"
+        lzdoom.write_bytes(b"FAKE_BINARY")
+        monkeypatch.setattr(game_service, "_LZDOOM", lzdoom)
 
     @pytest.fixture
     def mock_popen(self, monkeypatch):
@@ -185,6 +201,9 @@ class TestStop:
         wad = tmp_path / "doom.wad"
         wad.write_bytes(b"FAKE_WAD")
         monkeypatch.setattr(game_service, "_WAD_OVERRIDE", wad)
+        lzdoom = tmp_path / "lzdoom"
+        lzdoom.write_bytes(b"FAKE_BINARY")
+        monkeypatch.setattr(game_service, "_LZDOOM", lzdoom)
 
     def test_stop_when_not_running_returns_ok(self, client):
         r = client.post("/system/game-mode/stop")
@@ -209,14 +228,8 @@ class TestStop:
 
 
 class TestExitCodeMapping:
-    def test_controllers_missing(self):
-        assert game_service._EXIT_CODE_MESSAGES[2] == "Controllers required for this mode"
-
-    def test_matchbox_failed(self):
-        assert game_service._EXIT_CODE_MESSAGES[3] == "Window manager failed; check journalctl"
-
-    def test_doom_failed(self):
-        assert game_service._EXIT_CODE_MESSAGES[4] == "Doom failed to start; check journalctl"
+    def test_lzdoom_error_exit(self):
+        assert game_service._EXIT_CODE_MESSAGES[1] == "LZDoom exited with an error — check journalctl for details"
 
     def test_unknown_code_not_in_dict(self):
         # Default applied via .get(...) in _watch_for_exit
@@ -229,17 +242,20 @@ class TestWatcherTask:
         wad = tmp_path / "doom.wad"
         wad.write_bytes(b"FAKE_WAD")
         monkeypatch.setattr(game_service, "_WAD_OVERRIDE", wad)
+        lzdoom = tmp_path / "lzdoom"
+        lzdoom.write_bytes(b"FAKE_BINARY")
+        monkeypatch.setattr(game_service, "_LZDOOM", lzdoom)
 
     @pytest.mark.asyncio
-    async def test_watcher_maps_exit_code_2(self, monkeypatch):
+    async def test_watcher_maps_exit_code_1(self, monkeypatch):
         class FakeProc:
             pid = 4242
-            def poll(self): return 2
-            def wait(self, timeout=None): return 2
+            def poll(self): return 1
+            def wait(self, timeout=None): return 1
         monkeypatch.setattr(game_service, "_killpg", lambda *a, **k: None)
         game_service._launcher_proc = FakeProc()
         await game_service._watch_for_exit()
-        assert game_service._last_error == "Controllers required for this mode"
+        assert game_service._last_error == "LZDoom exited with an error — check journalctl for details"
 
     @pytest.mark.asyncio
     async def test_watcher_maps_unknown_exit_code(self, monkeypatch):
@@ -282,6 +298,9 @@ class TestChromiumFreeze:
         wad = tmp_path / "doom.wad"
         wad.write_bytes(b"FAKE_WAD")
         monkeypatch.setattr(game_service, "_WAD_OVERRIDE", wad)
+        lzdoom = tmp_path / "lzdoom"
+        lzdoom.write_bytes(b"FAKE_BINARY")
+        monkeypatch.setattr(game_service, "_LZDOOM", lzdoom)
 
     @pytest.fixture
     def mock_popen(self, monkeypatch):
@@ -357,6 +376,9 @@ class TestSpotifyIntegration:
         wad = tmp_path / "doom.wad"
         wad.write_bytes(b"FAKE_WAD")
         monkeypatch.setattr(game_service, "_WAD_OVERRIDE", wad)
+        lzdoom = tmp_path / "lzdoom"
+        lzdoom.write_bytes(b"FAKE_BINARY")
+        monkeypatch.setattr(game_service, "_LZDOOM", lzdoom)
 
     @pytest.fixture
     def mock_popen(self, monkeypatch):
