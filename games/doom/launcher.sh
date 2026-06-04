@@ -77,13 +77,13 @@ cp "$SCRIPT_DIR/lzdoom-p2.ini" /tmp/lzdoom-p2.ini 2>/dev/null || true
 
 # ── Launch LZDoom ─────────────────────────────────────────────────────
 # shellcheck disable=SC2086
-COMMON_OPTS="-iwad $WAD -skill $SKILL -config /tmp/lzdoom-p1.ini"
+COMMON_OPTS="-iwad $WAD -skill $SKILL -config /tmp/lzdoom-p1.ini +mouse_capturemode 0"
 
 case "$MODE" in
     single)
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
-            +vid_defwidth 1280 +vid_defheight 400 &
+            +vid_defwidth 1280 +vid_defheight 400 +win_w 1280 +win_h 400 +win_x 0 +win_y 0 &
         ;;
     coop)
         # shellcheck disable=SC2086
