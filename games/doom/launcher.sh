@@ -16,7 +16,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # chocolate-doom installs to /usr/games which is not in the systemd service PATH
 CHOCOLATE_DOOM=/usr/games/chocolate-doom
-CHOCOLATE_DOOM_SERVER=/usr/games/chocolate-doom-server
 
 SINK_P1_MOD=""
 SINK_P2_MOD=""
@@ -102,7 +101,7 @@ case "$MODE" in
             -window -geometry 640x400+320+0 &
         ;;
     coop)
-        "$CHOCOLATE_DOOM_SERVER" -deathmatch 0 -nodes 2 -port 5029 &
+        "$CHOCOLATE_DOOM" -dedicated -deathmatch 0 -nodes 2 -port 5029 &
         sleep 0.3
         # shellcheck disable=SC2086
         $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
@@ -112,7 +111,7 @@ case "$MODE" in
             -window -geometry 640x400+640+0 &
         ;;
     deathmatch)
-        "$CHOCOLATE_DOOM_SERVER" -deathmatch 1 -nodes 2 -port 5029 &
+        "$CHOCOLATE_DOOM" -dedicated -deathmatch 1 -nodes 2 -port 5029 &
         sleep 0.3
         # shellcheck disable=SC2086
         $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
