@@ -3,12 +3,12 @@
 
 Lives as an always-on-top GTK window. Shows a translucent "≡" icon in the
 top-right corner; tap to open Resume/Save/Load/Quit (Save and Load are
-hidden in 2P modes because chocolate-doom does not support save/load in
-netplay sessions).
+hidden in 2P modes because LZDoom does not support save/load in netplay
+sessions).
 
-Reads MODE from the environment; matchbox-window-manager (running in the
-same Doom-mode process group) honours _NET_WM_STATE_ABOVE so the icon
-stays on top of the chocolate-doom windows reliably.
+Reads MODE from the environment; openbox (running in the same Doom-mode
+process group) honours _NET_WM_STATE_ABOVE so the icon stays on top of the
+LZDoom windows reliably.
 """
 import os
 import subprocess
@@ -105,7 +105,7 @@ class Overlay(Gtk.Window):
 
     def _send_key(self, key: str):
         subprocess.run(
-            ["xdotool", "search", "--name", "Chocolate Doom",
+            ["xdotool", "search", "--name", "Freedoom\\|LZDoom\\|Doom",
              "windowactivate", "--sync", "key", key],
             check=False,
         )
