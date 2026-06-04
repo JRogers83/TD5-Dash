@@ -101,21 +101,23 @@ case "$MODE" in
             -window -geometry 640x400+320+0 &
         ;;
     coop)
-        "$CHOCOLATE_DOOM" -dedicated -deathmatch 0 -nodes 2 -port 5029 &
-        sleep 0.3
+        # P1 hosts, waits for 1 more player
         # shellcheck disable=SC2086
-        $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
+        $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -nodes 2 -port 5029 \
             -window -geometry 640x400+0+0 &
+        sleep 1.0
+        # P2 connects to P1
         # shellcheck disable=SC2086
         $P2_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
             -window -geometry 640x400+640+0 &
         ;;
     deathmatch)
-        "$CHOCOLATE_DOOM" -dedicated -deathmatch 1 -nodes 2 -port 5029 &
-        sleep 0.3
+        # P1 hosts deathmatch, waits for 1 more player
         # shellcheck disable=SC2086
-        $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
+        $P1_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -deathmatch -nodes 2 -port 5029 \
             -window -geometry 640x400+0+0 &
+        sleep 1.0
+        # P2 connects to P1
         # shellcheck disable=SC2086
         $P2_PULSE_PREFIX "$CHOCOLATE_DOOM" $COMMON_OPTS -connect 127.0.0.1:5029 \
             -window -geometry 640x400+640+0 &
