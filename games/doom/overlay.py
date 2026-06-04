@@ -16,7 +16,7 @@ import urllib.request
 
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk
+from gi.repository import Gtk, Gdk
 
 MODE = os.environ.get("MODE", "single")
 IS_SINGLE = (MODE == "single")
@@ -24,12 +24,16 @@ IS_SINGLE = (MODE == "single")
 
 class Overlay(Gtk.Window):
     def __init__(self):
-        super().__init__(type=Gtk.WindowType.POPUP)
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
         self.set_app_paintable(True)
         self.set_decorated(False)
         self.set_keep_above(True)
         self.set_accept_focus(False)
         self.set_skip_taskbar_hint(True)
+        self.add_events(
+            Gdk.EventMask.BUTTON_PRESS_MASK |
+            Gdk.EventMask.TOUCH_MASK
+        )
         screen = self.get_screen()
         visual = screen.get_rgba_visual()
         if visual:
@@ -38,6 +42,7 @@ class Overlay(Gtk.Window):
         self.menu_open = False
         self._build_compact()
         self.connect("button-press-event", self._on_click)
+        self.connect("touch-event", self._on_click)
 
     def _build_compact(self):
         self.move(1210, 10)
