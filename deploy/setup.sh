@@ -50,6 +50,9 @@ echo "▸ Configuring uinput access for joystick mapper..."
 echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' > /etc/udev/rules.d/99-td5-uinput.rules
 modprobe uinput 2>/dev/null || true
 udevadm control --reload-rules && udevadm trigger 2>/dev/null || true
+# Set permissions directly in case the udev rule hasn't taken effect yet
+chown root:input /dev/uinput 2>/dev/null || true
+chmod 660 /dev/uinput 2>/dev/null || true
 
 # ── Python virtualenv ──────────────────────────────────────────────────────────
 echo "▸ Setting up Python venv..."
