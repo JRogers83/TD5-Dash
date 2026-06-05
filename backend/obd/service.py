@@ -47,7 +47,8 @@ log = logging.getLogger(__name__)
 
 FTDI_URL      = os.getenv("TD5_FTDI_URL",      "ftdi://ftdi:232/1")
 POLL_INTERVAL = float(os.getenv("TD5_POLL_INTERVAL", "1.0"))
-RETRY_DELAY_S = 5.0   # seconds to wait before reconnecting after a failure
+_RETRY_MIN_S  = 5.0    # initial retry delay
+_RETRY_MAX_S  = 60.0   # cap: retry at most once per minute when no cable
 FAULT_POLL_INTERVAL_S = 30.0  # read fault codes every N seconds
 HISTORY_WRITE_INTERVAL_S = 10.0  # write to engine_history every N seconds
 
@@ -209,6 +210,7 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
     MAP uses read_local_id() (raises) as the connection health check.
     """
     global _live_session, _live_conn
+    _retry_delay = _RETRY_MIN_S
     while True:
         log.info("Connecting to TD5 ECU at %s …", FTDI_URL)
         try:
@@ -352,14 +354,18 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                     time.sleep(0)
 
         except KLineError as exc:
-            log.error("K-Line connection failed: %s — retrying in %.0f s", exc, RETRY_DELAY_S)
+            log.error("K-Line connection failed: %s — retrying in %.0f s", exc, _retry_delay)
+            _retry_delay = min(_retry_delay * 2, _RETRY_MAX_S)
         except Exception:
-            log.exception("Unexpected error in OBD poll loop — retrying in %.0f s", RETRY_DELAY_S)
+            log.exception("Unexpected error in OBD poll loop — retrying in %.0f s", _retry_delay)
+            _retry_delay = min(_retry_delay * 2, _RETRY_MAX_S)
+        else:
+            _retry_delay = _RETRY_MIN_S  # reset on clean session exit
         finally:
             _live_session = None
             _live_conn    = None
 
-        time.sleep(RETRY_DELAY_S)
+        time.sleep(_retry_delay)
 
 
 # ── Async entry point ──────────────────────────────────────────────────────────
