@@ -37,7 +37,6 @@ apt-get install -y --no-install-recommends \
     plymouth \
     plymouth-themes \
     curl \
-    chocolate-doom \
     freedoom \
     python3-evdev \
     xdotool \
