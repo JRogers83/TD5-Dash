@@ -26,19 +26,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Wait for a Doom window to appear, excluding a given window ID.
-# Uses broad name match: P1 shows "LZDoom..." title while hosting, "Freedoom" after game starts.
-_wait_doom_win() {
-    _excl="$1"
-    for _i in $(seq 1 20); do
-        for _w in $(xdotool search --name "Freedoom\|LZDoom" 2>/dev/null); do
-            [ "$_w" != "$_excl" ] && echo "$_w" && return 0
-        done
-        sleep 0.5
-    done
-    return 1
-}
-
 # ── Controller validation (2P only) ───────────────────────────────────
 if [ "$MODE" != "single" ]; then
     JS_COUNT=$(ls /dev/input/js* 2>/dev/null | wc -l)
@@ -99,60 +86,52 @@ case "$MODE" in
             +vid_defwidth 1280 +vid_defheight 400 +win_w 1280 +win_h 400 +win_x 0 +win_y 0 &
         ;;
     coop)
-        # Launch P1 first, wait for its window, position it, then launch P2.
-        # openbox ignores win_x=0 (treats it as default/unset); sequential
-        # xdotool capture is the only reliable way to position P1.
         # shellcheck disable=SC2086
         $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
             +vid_defwidth 640 +vid_defheight 400 \
             -host 2 -port 5029 &
-        p1_win=$(_wait_doom_win "")
-        if [ -z "$p1_win" ]; then
-            echo "ERROR: P1 window did not appear" >&2; exit 1
-        fi
-        xdotool windowmove "$p1_win" 0 0
-        xdotool windowsize "$p1_win" 640 400
-
+        sleep 2.5
         # shellcheck disable=SC2086
         $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
             +vid_defwidth 640 +vid_defheight 400 \
             -join 127.0.0.1:5029 &
-        p2_win=$(_wait_doom_win "$p1_win")
-        if [ -n "$p2_win" ]; then
-            xdotool windowmove "$p2_win" 640 0
-            xdotool windowsize "$p2_win" 640 400
-        fi
         ;;
     deathmatch)
         # shellcheck disable=SC2086
         $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
             +vid_defwidth 640 +vid_defheight 400 \
             -deathmatch -host 2 -port 5029 &
-        p1_win=$(_wait_doom_win "")
-        if [ -z "$p1_win" ]; then
-            echo "ERROR: P1 window did not appear" >&2; exit 1
-        fi
-        xdotool windowmove "$p1_win" 0 0
-        xdotool windowsize "$p1_win" 640 400
-
+        sleep 2.5
         # shellcheck disable=SC2086
         $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
             +vid_defwidth 640 +vid_defheight 400 \
             -join 127.0.0.1:5029 &
-        p2_win=$(_wait_doom_win "$p1_win")
-        if [ -n "$p2_win" ]; then
-            xdotool windowmove "$p2_win" 640 0
-            xdotool windowsize "$p2_win" 640 400
-        fi
         ;;
 esac
 
-# Detect immediate LZDoom failure
+# Detect immediate LZDoom failure (within 1s of launch)
+sleep 1.0
 if ! pgrep -f lzdoom >/dev/null 2>&1; then
     echo "ERROR: lzdoom failed to launch" >&2
     exit 1
+fi
+
+# ── 2P window positioning: wait for Freedoom titles then sort by window ID ──
+# After the game connects, both windows get "Freedoom" titles. Window IDs are
+# assigned in creation order, so the lower ID = P1 (launched first).
+if [ "$MODE" != "single" ]; then
+    sleep 4.0
+    wins=$(xdotool search --name "Freedoom" 2>/dev/null | sort -n)
+    p1_win=$(echo "$wins" | head -1)
+    p2_win=$(echo "$wins" | tail -1)
+    if [ -n "$p1_win" ] && [ "$p1_win" != "$p2_win" ]; then
+        xdotool windowmove "$p1_win" 0 0
+        xdotool windowsize "$p1_win" 640 400
+        xdotool windowmove "$p2_win" 640 0
+        xdotool windowsize "$p2_win" 640 400
+    fi
 fi
 
 # ── Overlay ────────────────────────────────────────────────────────────
