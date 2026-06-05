@@ -101,19 +101,24 @@ async def _discover_chromium_pid() -> None:
     """
     import shared_state
     import psutil
-    deadline = time.monotonic() + 30.0
-    while time.monotonic() < deadline:
+    def _scan() -> int | None:
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
                 if proc.info["name"] != "chromium":
                     continue
-                cmd = proc.info.get("cmdline") or []
-                if "--kiosk" in cmd:
-                    shared_state.chromium_pid = proc.info["pid"]
-                    log.info("Chromium kiosk PID discovered: %d", proc.info["pid"])
-                    return
+                if "--kiosk" in (proc.info.get("cmdline") or []):
+                    return proc.info["pid"]
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
+        return None
+
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
+        pid = await asyncio.to_thread(_scan)
+        if pid is not None:
+            shared_state.chromium_pid = pid
+            log.info("Chromium kiosk PID discovered: %d", pid)
+            return
         await asyncio.sleep(1.0)
     log.warning("Chromium kiosk PID not found within 30 s; Doom mode will degrade")
 
