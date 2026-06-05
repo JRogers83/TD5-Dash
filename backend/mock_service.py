@@ -60,11 +60,6 @@ _MOCK: dict = {
         "uptime_s":        8040,   # 2h 14m
         "alerts":          [],
     },
-    "gps": {
-        "lat": 52.6309,
-        "lon": 1.2974,
-        "alt": 142.0,
-    },
     "weather": {
         "current": {
             "temp_c":       9.2,
@@ -108,10 +103,9 @@ async def mock_system_loop(manager: ConnectionManager, interval_s: float = 1.0) 
 
 
 async def mock_starlink_loop(manager: ConnectionManager, interval_s: float = 2.0) -> None:
-    """Publishes both starlink status and GPS together, mirroring the real service."""
+    """Publishes Starlink status."""
     while True:
         await manager.broadcast({"type": "starlink", "data": _MOCK["starlink"]})
-        await manager.broadcast({"type": "gps",      "data": _MOCK["gps"]})
         await asyncio.sleep(interval_s)
 
 

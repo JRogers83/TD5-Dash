@@ -68,11 +68,6 @@ EXPECTED_SCHEMAS = {
         "uptime_s":        (int, float),
         "alerts":          list,
     },
-    "gps": {
-        "lat": (int, float),
-        "lon": (int, float),
-        "alt": (int, float),
-    },
     "weather": {
         "current":  dict,
         "forecast": list,
@@ -155,17 +150,6 @@ class TestStarlinkFields:
                 f"starlink.{field} has wrong type: {type(_MOCK['starlink'][field])}"
 
 
-class TestGPSFields:
-    def test_has_all_required_fields(self):
-        for field in EXPECTED_SCHEMAS["gps"]:
-            assert field in _MOCK["gps"], f"gps missing field: {field}"
-
-    def test_field_types(self):
-        for field, expected_type in EXPECTED_SCHEMAS["gps"].items():
-            assert isinstance(_MOCK["gps"][field], expected_type), \
-                f"gps.{field} has wrong type: {type(_MOCK['gps'][field])}"
-
-
 class TestWeatherFields:
     def test_has_all_required_fields(self):
         for field in EXPECTED_SCHEMAS["weather"]:
@@ -205,6 +189,3 @@ class TestMockValueSanity:
     def test_brightness_range(self):
         assert 0 <= _MOCK["system"]["brightness"] <= 255
 
-    def test_gps_lat_lon_range(self):
-        assert -90 <= _MOCK["gps"]["lat"] <= 90
-        assert -180 <= _MOCK["gps"]["lon"] <= 180

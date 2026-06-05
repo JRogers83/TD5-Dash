@@ -33,61 +33,13 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-import shared_state
 from ws_hub import ConnectionManager
 
 log = logging.getLogger(__name__)
 
 HOST          = os.getenv("STARLINK_HOST",          "192.168.100.1:9200")
 POLL_INTERVAL = int(os.getenv("STARLINK_POLL_INTERVAL", "2"))
-GPS_POLL_INTERVAL = int(os.getenv("STARLINK_GPS_POLL_INTERVAL", "300"))  # 5 min
 RETRY_DELAY_S = 10.0
-
-_last_geocode_time: float = 0.0
-
-
-def _maybe_geocode(lat: float, lon: float) -> None:
-    """Reverse geocode GPS coordinates at most every GPS_POLL_INTERVAL seconds.
-
-    Uses Nominatim (OpenStreetMap) — free, no key.
-    Persists the result to the settings SQLite table for weather location.
-    """
-    global _last_geocode_time
-    now = time.time()
-    if now - _last_geocode_time < GPS_POLL_INTERVAL:
-        return
-
-    _last_geocode_time = now
-    try:
-        import httpx
-        r = httpx.get(
-            "https://nominatim.openstreetmap.org/reverse",
-            params={"lat": lat, "lon": lon, "format": "json", "zoom": 10},
-            headers={"User-Agent": "TD5Dash/1.0"},
-            timeout=10,
-        )
-        if r.status_code == 200:
-            data = r.json()
-            addr = data.get("address", {})
-            # Build a concise place name
-            place = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("hamlet") or ""
-            country = addr.get("country", "")
-            location = f"{place}, {country}" if place else data.get("display_name", "")[:50]
-
-            log.info("Reverse geocoded %.4f, %.4f → %s", lat, lon, location)
-
-            # Persist to settings
-            try:
-                import db
-                db.set_settings({
-                    "weather_lat": str(lat),
-                    "weather_lon": str(lon),
-                    "weather_location": location,
-                })
-            except Exception:
-                log.debug("Could not persist geocoded location to settings")
-    except Exception as exc:
-        log.debug("Reverse geocode failed: %s", exc)
 
 # Alert field names from the gRPC API — iterated to build the active-alerts list.
 # alert_roaming is excluded here; it is surfaced as a dedicated badge instead.
@@ -162,27 +114,6 @@ def _poll_status(ctx) -> dict:
     }
 
 
-def _poll_gps(ctx) -> dict | None:
-    """
-    Blocking GPS poll — runs in the worker thread.
-
-    Returns {lat, lon, alt} if GPS is enabled and has a fix, else None.
-    (0.0, 0.0) means GPS is disabled or has no lock yet — we treat it as None.
-    """
-    import starlink_grpc
-
-    try:
-        location = _to_dict(starlink_grpc.location_data(ctx))  # hw-verify
-        lat = float(location.get("latitude",  0.0) or 0.0)
-        lon = float(location.get("longitude", 0.0) or 0.0)
-        alt = float(location.get("altitude",  0.0) or 0.0)
-        if lat == 0.0 and lon == 0.0:
-            return None   # GPS disabled or no satellite lock
-        return {"lat": round(lat, 6), "lon": round(lon, 6), "alt": round(alt, 0)}
-    except Exception:
-        return None   # GPS not enabled raises; treat as not available
-
-
 # ── Blocking poll loop (runs in a worker thread) ───────────────────────────────
 
 def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> None:
@@ -208,15 +139,6 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                 try:
                     data = _poll_status(ctx)
                     _broadcast({"type": "starlink", "data": data})
-
-                    gps = _poll_gps(ctx)
-                    if gps:
-                        _broadcast({"type": "gps", "data": gps})
-                        # Update shared GPS state so weather_service can use live coordinates
-                        shared_state.gps_lat = gps["lat"]
-                        shared_state.gps_lon = gps["lon"]
-                        # Reverse geocode periodically and persist to settings
-                        _maybe_geocode(gps["lat"], gps["lon"])
 
                 except starlink_grpc.GrpcError as exc:
                     log.warning("Starlink gRPC error: %s — will retry", exc)
