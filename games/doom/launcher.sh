@@ -86,27 +86,29 @@ case "$MODE" in
             +vid_defwidth 1280 +vid_defheight 400 +win_w 1280 +win_h 400 +win_x 0 +win_y 0 &
         ;;
     coop)
+        # +win_x 1 (not 0) forces an explicit position — openbox treats win_x=0 as unset/default.
+        # P2 uses win_x=640 which works correctly for the same reason.
         # shellcheck disable=SC2086
-        $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
-            +vid_defwidth 640 +vid_defheight 400 \
+        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
+            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 1 +win_y 1 \
             -host 2 -port 5029 &
         sleep 2.5
         # shellcheck disable=SC2086
-        $P2_PULSE_PREFIX "$LZDOOM" \
+        SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
-            +vid_defwidth 640 +vid_defheight 400 \
+            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 1 \
             -join 127.0.0.1:5029 &
         ;;
     deathmatch)
         # shellcheck disable=SC2086
-        $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
-            +vid_defwidth 640 +vid_defheight 400 \
+        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
+            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 1 +win_y 1 \
             -deathmatch -host 2 -port 5029 &
         sleep 2.5
         # shellcheck disable=SC2086
-        $P2_PULSE_PREFIX "$LZDOOM" \
+        SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
-            +vid_defwidth 640 +vid_defheight 400 \
+            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 1 \
             -join 127.0.0.1:5029 &
         ;;
 esac
@@ -116,22 +118,6 @@ sleep 1.0
 if ! pgrep -f lzdoom >/dev/null 2>&1; then
     echo "ERROR: lzdoom failed to launch" >&2
     exit 1
-fi
-
-# ── 2P window positioning: wait for Freedoom titles then sort by window ID ──
-# After the game connects, both windows get "Freedoom" titles. Window IDs are
-# assigned in creation order, so the lower ID = P1 (launched first).
-if [ "$MODE" != "single" ]; then
-    sleep 4.0
-    wins=$(xdotool search --name "Freedoom" 2>/dev/null | sort -n)
-    p1_win=$(echo "$wins" | head -1)
-    p2_win=$(echo "$wins" | tail -1)
-    if [ -n "$p1_win" ] && [ "$p1_win" != "$p2_win" ]; then
-        xdotool windowmove "$p1_win" 0 0
-        xdotool windowsize "$p1_win" 640 400
-        xdotool windowmove "$p2_win" 640 0
-        xdotool windowsize "$p2_win" 640 400
-    fi
 fi
 
 # ── Overlay ────────────────────────────────────────────────────────────
