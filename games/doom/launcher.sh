@@ -76,20 +76,22 @@ cp "$SCRIPT_DIR/lzdoom-p1.ini" /tmp/lzdoom-p1.ini
 cp "$SCRIPT_DIR/lzdoom-p2.ini" /tmp/lzdoom-p2.ini 2>/dev/null || true
 
 # ── Launch LZDoom ─────────────────────────────────────────────────────
+# WAD is passed as a separately-quoted argument at each launch site so that
+# paths with spaces are handled correctly. COMMON_OPTS holds everything else.
 # shellcheck disable=SC2086
-COMMON_OPTS="-iwad \"$WAD\" -skill $SKILL -config /tmp/lzdoom-p1.ini +mouse_capturemode 0"
+COMMON_OPTS="-skill $SKILL -config /tmp/lzdoom-p1.ini +mouse_capturemode 0"
 
 case "$MODE" in
     single)
         # shellcheck disable=SC2086
-        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
+        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" -iwad "$WAD" $COMMON_OPTS \
             +vid_defwidth 1280 +vid_defheight 400 +win_w 1280 +win_h 400 +win_x 0 +win_y 0 &
         ;;
     coop)
         # +win_x 1 (not 0) forces an explicit position — openbox treats win_x=0 as unset/default.
         # P2 uses win_x=640 which works correctly for the same reason.
         # shellcheck disable=SC2086
-        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
+        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" -iwad "$WAD" $COMMON_OPTS \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 1 +win_y 1 \
             -host 2 -port 5029 &
         sleep 2.5
@@ -101,7 +103,7 @@ case "$MODE" in
         ;;
     deathmatch)
         # shellcheck disable=SC2086
-        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
+        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" -iwad "$WAD" $COMMON_OPTS \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 1 +win_y 1 \
             -deathmatch -host 2 -port 5029 &
         sleep 2.5
