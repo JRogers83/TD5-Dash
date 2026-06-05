@@ -89,26 +89,26 @@ case "$MODE" in
         ;;
     coop)
         # +win_x 1 (not 0) forces an explicit position — openbox treats win_x=0 as unset/default.
-        # SDL_JOYSTICK_DEVICE limits each SDL instance to its own physical device.
+        # P2 uses win_x=640 which works correctly for the same reason.
         # shellcheck disable=SC2086
-        SDL_JOYSTICK_DEVICE=/dev/input/js0 SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" -iwad "$WAD" $COMMON_OPTS \
+        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" -iwad "$WAD" $COMMON_OPTS \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 1 +win_y 1 \
             -host 2 -port 5029 &
         sleep 2.5
         # shellcheck disable=SC2086
-        SDL_JOYSTICK_DEVICE=/dev/input/js1 SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
+        SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad "$WAD" -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 1 \
             -join 127.0.0.1:5029 &
         ;;
     deathmatch)
         # shellcheck disable=SC2086
-        SDL_JOYSTICK_DEVICE=/dev/input/js0 SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" -iwad "$WAD" $COMMON_OPTS \
+        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" -iwad "$WAD" $COMMON_OPTS \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 1 +win_y 1 \
             -deathmatch -host 2 -port 5029 &
         sleep 2.5
         # shellcheck disable=SC2086
-        SDL_JOYSTICK_DEVICE=/dev/input/js1 SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
+        SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad "$WAD" -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 1 \
             -join 127.0.0.1:5029 &
