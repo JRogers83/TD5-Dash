@@ -9,6 +9,7 @@ import os
 import subprocess
 import threading
 import urllib.request
+from urllib.error import URLError
 
 import gi
 gi.require_version("Gtk", "3.0")
@@ -176,13 +177,15 @@ class Overlay(Gtk.Window):
         self._resume()
 
     def _quit(self):
-        try:
-            urllib.request.urlopen(
-                "http://localhost:8000/system/game-mode/stop",
-                data=b"", timeout=2,
-            )
-        except Exception:
-            pass
+        def _stop():
+            try:
+                urllib.request.urlopen(
+                    "http://localhost:8000/system/game-mode/stop",
+                    data=b"", timeout=2,
+                )
+            except Exception:
+                pass
+        threading.Thread(target=_stop, daemon=True).start()
         Gtk.main_quit()
 
     def _send_key(self, key: str):

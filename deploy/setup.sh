@@ -42,7 +42,6 @@ apt-get install -y --no-install-recommends \
     xdotool \
     python3-gi \
     gir1.2-gtk-3.0 \
-    matchbox-window-manager \
     openbox \
     libsamplerate0
 

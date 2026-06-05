@@ -57,6 +57,7 @@ _stop_lock = asyncio.Lock()
 # Launcher exit code → user-facing message
 _EXIT_CODE_MESSAGES = {
     1: "LZDoom exited with an error — check journalctl for details",
+    2: "Controllers required for this mode",
 }
 
 

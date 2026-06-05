@@ -231,6 +231,9 @@ class TestExitCodeMapping:
     def test_lzdoom_error_exit(self):
         assert game_service._EXIT_CODE_MESSAGES[1] == "LZDoom exited with an error — check journalctl for details"
 
+    def test_controllers_missing_exit(self):
+        assert game_service._EXIT_CODE_MESSAGES[2] == "Controllers required for this mode"
+
     def test_unknown_code_not_in_dict(self):
         # Default applied via .get(...) in _watch_for_exit
         assert 99 not in game_service._EXIT_CODE_MESSAGES

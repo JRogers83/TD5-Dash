@@ -77,7 +77,7 @@ cp "$SCRIPT_DIR/lzdoom-p2.ini" /tmp/lzdoom-p2.ini 2>/dev/null || true
 
 # ── Launch LZDoom ─────────────────────────────────────────────────────
 # shellcheck disable=SC2086
-COMMON_OPTS="-iwad $WAD -skill $SKILL -config /tmp/lzdoom-p1.ini +mouse_capturemode 0"
+COMMON_OPTS="-iwad \"$WAD\" -skill $SKILL -config /tmp/lzdoom-p1.ini +mouse_capturemode 0"
 
 case "$MODE" in
     single)
@@ -95,7 +95,7 @@ case "$MODE" in
         sleep 2.5
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
-            -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
+            -iwad "$WAD" -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 1 \
             -join 127.0.0.1:5029 &
         ;;
@@ -107,7 +107,7 @@ case "$MODE" in
         sleep 2.5
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
-            -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
+            -iwad "$WAD" -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 1 \
             -join 127.0.0.1:5029 &
         ;;

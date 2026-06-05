@@ -126,19 +126,20 @@ async def lifespan(app: FastAPI):
     # Defensive: if a previous backend run crashed mid-Doom, Chromium may still be
     # SIGSTOPped, an orphan launcher may be running, and PulseAudio remap sinks
     # may be loaded. Clean these up before doing anything else.
-    # SIGCONT by binary name catches the whole Chromium tree; harmless if already running.
-    # Use try/except so missing binaries (Docker, dev) are silently ignored.
     try:
+        # pkill raises FileNotFoundError in Docker/dev where it is absent.
         subprocess.run(["pkill", "-CONT", "-x", "chromium"], check=False)
         subprocess.run(["pkill", "-f", "games/doom/launcher.sh"], check=False)
-        subprocess.run(
-            "pactl list short modules 2>/dev/null "
-            "| awk -F'\\t' '$3 ~ /sink_name=doom_p[12]/ { print $1 }' "
-            "| xargs -r -n1 pactl unload-module",
-            shell=True, check=False,
-        )
     except FileNotFoundError:
-        pass  # pkill / pactl not present in Docker / dev environments
+        pass  # pkill not present (Docker / dev)
+    # pactl pipeline: runs via /bin/sh so FileNotFoundError never fires;
+    # the pipeline handles absence gracefully via 2>/dev/null.
+    subprocess.run(
+        "pactl list short modules 2>/dev/null "
+        "| awk -F'\\t' '$3 ~ /sink_name=doom_p[12]/ { print $1 }' "
+        "| xargs -r -n1 pactl unload-module",
+        shell=True, check=False,
+    )
 
     tasks = [
         asyncio.create_task(engine_loop(manager)),
@@ -437,12 +438,17 @@ async def system_update() -> dict:
             capture_output=True,
         )
 
-    # apt install game deps — idempotent; upgrades if newer packages are available
-    subprocess.run(
+    # apt install game deps — idempotent; upgrades if newer packages are available.
+    # Failure is logged but does not abort the restart — a broken package manager
+    # should not prevent code updates from landing.
+    apt = subprocess.run(
         ["sudo", "apt-get", "install", "-y",
          "freedoom", "openbox", "libsamplerate0", "python3-evdev"],
-        capture_output=True,
+        capture_output=True, text=True,
     )
+    if apt.returncode != 0:
+        log.warning("OTA apt-get failed (rc=%d): %s", apt.returncode,
+                    (apt.stderr or apt.stdout).strip()[:200])
 
     _clear_chromium_cache()
     asyncio.create_task(_delayed_restart())
