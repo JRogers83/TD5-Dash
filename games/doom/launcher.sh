@@ -118,6 +118,21 @@ if ! pgrep -f lzdoom >/dev/null 2>&1; then
     exit 1
 fi
 
+# ── Force 2P window positions (openbox ignores win_x=0 as default) ────
+if [ "$MODE" != "single" ]; then
+    sleep 3.0
+    p1_pid=$(pgrep -f "lzdoom.*-host 2" | head -1)
+    p2_pid=$(pgrep -f "lzdoom.*-join" | head -1)
+    if [ -n "$p1_pid" ]; then
+        p1_win=$(xdotool search --pid "$p1_pid" 2>/dev/null | head -1)
+        [ -n "$p1_win" ] && xdotool windowmove "$p1_win" 0 0 && xdotool windowsize "$p1_win" 640 400 || true
+    fi
+    if [ -n "$p2_pid" ]; then
+        p2_win=$(xdotool search --pid "$p2_pid" 2>/dev/null | head -1)
+        [ -n "$p2_win" ] && xdotool windowmove "$p2_win" 640 0 && xdotool windowsize "$p2_win" 640 400 || true
+    fi
+fi
+
 # ── Overlay ────────────────────────────────────────────────────────────
 MODE="$MODE" python3 "$SCRIPT_DIR/overlay.py" &
 
