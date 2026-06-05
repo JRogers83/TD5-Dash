@@ -38,12 +38,15 @@ xset s noblank
 # unclutter handles it at the X server level as a catch-all.
 unclutter -idle 0 -root &
 
-# Wait for the FastAPI backend to become ready (max ~30 s)
+# Wait for the FastAPI backend to become ready (max ~60 s).
+# Poll /health rather than / — /health returns 200 only after lifespan
+# has completed startup (db init, service tasks created), not just when
+# the static file server is mounted.
 i=0
-until curl -sf http://localhost:8000 >/dev/null 2>&1; do
+until curl -sf http://localhost:8000/health >/dev/null 2>&1; do
     sleep 0.5
     i=$((i + 1))
-    [ $i -ge 60 ] && break
+    [ $i -ge 120 ] && break
 done
 
 exec chromium \
