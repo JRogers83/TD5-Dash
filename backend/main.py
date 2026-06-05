@@ -118,28 +118,33 @@ async def _discover_chromium_pid() -> None:
     log.warning("Chromium kiosk PID not found within 30 s; Doom mode will degrade")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    db.init_db()
-    db.purge_old_history()
+async def _doom_startup_cleanup() -> None:
+    """Background crash-recovery: if a previous run crashed mid-Doom, Chromium may
+    be SIGSTOPped, an orphan launcher running, or PulseAudio remap sinks loaded.
 
-    # Defensive: if a previous backend run crashed mid-Doom, Chromium may still be
-    # SIGSTOPped, an orphan launcher may be running, and PulseAudio remap sinks
-    # may be loaded. Clean these up before doing anything else.
+    Runs as a background task AFTER the server starts accepting requests so it
+    never blocks the startup path. PulseAudio is a user-session daemon that starts
+    when the user logs in — running pactl synchronously before yield would block
+    lifespan for up to 5 s on every normal boot while waiting for PulseAudio to
+    connect.
+    """
     try:
-        # pkill raises FileNotFoundError in Docker/dev where it is absent.
         subprocess.run(["pkill", "-CONT", "-x", "chromium"], check=False)
         subprocess.run(["pkill", "-f", "games/doom/launcher.sh"], check=False)
     except FileNotFoundError:
         pass  # pkill not present (Docker / dev)
-    # pactl pipeline: runs via /bin/sh so FileNotFoundError never fires;
-    # the pipeline handles absence gracefully via 2>/dev/null.
     subprocess.run(
         "pactl list short modules 2>/dev/null "
         "| awk -F'\\t' '$3 ~ /sink_name=doom_p[12]/ { print $1 }' "
         "| xargs -r -n1 pactl unload-module",
         shell=True, check=False,
     )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.init_db()
+    db.purge_old_history()
 
     tasks = [
         asyncio.create_task(engine_loop(manager)),
@@ -149,6 +154,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(starlink_loop(manager)),
         asyncio.create_task(weather_loop(manager)),
         asyncio.create_task(_discover_chromium_pid()),
+        asyncio.create_task(_doom_startup_cleanup()),
     ]
     yield
     for task in tasks:
