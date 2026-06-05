@@ -88,33 +88,28 @@ case "$MODE" in
             +vid_defwidth 1280 +vid_defheight 400 +win_w 1280 +win_h 400 +win_x 0 +win_y 0 &
         ;;
     coop)
-        # +use_joystick 0: disable native SDL joystick — joy2window handles input
-        # instead, giving complete per-player isolation (axes + buttons).
-        # +win_x 1 (not 0): openbox treats win_x=0 as unset/default.
+        # +win_x 1 (not 0) forces an explicit position — openbox treats win_x=0 as unset/default.
+        # P2 uses win_x=640 which works correctly for the same reason.
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" -iwad "$WAD" $COMMON_OPTS \
-            +use_joystick 0 \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 1 +win_y 1 \
             -host 2 -port 5029 &
         sleep 2.5
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad "$WAD" -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
-            +use_joystick 0 \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 1 \
             -join 127.0.0.1:5029 &
         ;;
     deathmatch)
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" -iwad "$WAD" $COMMON_OPTS \
-            +use_joystick 0 \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 1 +win_y 1 \
             -deathmatch -host 2 -port 5029 &
         sleep 2.5
         # shellcheck disable=SC2086
         SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad "$WAD" -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
-            +use_joystick 0 \
             +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 1 \
             -join 127.0.0.1:5029 &
         ;;
@@ -125,21 +120,6 @@ sleep 1.0
 if ! pgrep -f lzdoom >/dev/null 2>&1; then
     echo "ERROR: lzdoom failed to launch" >&2
     exit 1
-fi
-
-# ── 2P controller isolation via joy2window ────────────────────────────
-# LZDoom's JoyN bindings route button events globally (Enabled=0 in the INI
-# only disables axes). joy2window sends each controller's input to its own
-# window via xdotool, giving complete isolation for axes and buttons.
-if [ "$MODE" != "single" ]; then
-    sleep 3.0  # wait for both instances to connect and show Freedoom title
-    wins=$(xdotool search --name "Freedoom" 2>/dev/null | sort -n)
-    p1_win=$(echo "$wins" | head -1)
-    p2_win=$(echo "$wins" | tail -1)
-    if [ -n "$p1_win" ] && [ "$p1_win" != "$p2_win" ]; then
-        python3 "$SCRIPT_DIR/joy2window.py" /dev/input/js0 "$p1_win" &
-        python3 "$SCRIPT_DIR/joy2window.py" /dev/input/js1 "$p2_win" &
-    fi
 fi
 
 # ── Overlay ────────────────────────────────────────────────────────────
