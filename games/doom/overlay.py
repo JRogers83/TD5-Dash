@@ -185,7 +185,9 @@ class Overlay(Gtk.Window):
                 )
             except Exception:
                 pass
-        threading.Thread(target=_stop, daemon=True).start()
+        t = threading.Thread(target=_stop, daemon=False)
+        t.start()
+        t.join(timeout=2.5)  # wait for stop request before exiting
         Gtk.main_quit()
 
     def _send_key(self, key: str):
