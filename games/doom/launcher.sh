@@ -26,6 +26,19 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Wait for a Doom window to appear, excluding a given window ID.
+# Uses broad name match: P1 shows "LZDoom..." title while hosting, "Freedoom" after game starts.
+_wait_doom_win() {
+    _excl="$1"
+    for _i in $(seq 1 20); do
+        for _w in $(xdotool search --name "Freedoom\|LZDoom" 2>/dev/null); do
+            [ "$_w" != "$_excl" ] && echo "$_w" && return 0
+        done
+        sleep 0.5
+    done
+    return 1
+}
+
 # ── Controller validation (2P only) ───────────────────────────────────
 if [ "$MODE" != "single" ]; then
     JS_COUNT=$(ls /dev/input/js* 2>/dev/null | wc -l)
@@ -86,51 +99,60 @@ case "$MODE" in
             +vid_defwidth 1280 +vid_defheight 400 +win_w 1280 +win_h 400 +win_x 0 +win_y 0 &
         ;;
     coop)
+        # Launch P1 first, wait for its window, position it, then launch P2.
+        # openbox ignores win_x=0 (treats it as default/unset); sequential
+        # xdotool capture is the only reliable way to position P1.
         # shellcheck disable=SC2086
-        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
-            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 0 +win_y 0 \
+        $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
+            +vid_defwidth 640 +vid_defheight 400 \
             -host 2 -port 5029 &
-        sleep 2.5
+        p1_win=$(_wait_doom_win "")
+        if [ -z "$p1_win" ]; then
+            echo "ERROR: P1 window did not appear" >&2; exit 1
+        fi
+        xdotool windowmove "$p1_win" 0 0
+        xdotool windowsize "$p1_win" 640 400
+
         # shellcheck disable=SC2086
-        SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
+        $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
-            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 0 \
+            +vid_defwidth 640 +vid_defheight 400 \
             -join 127.0.0.1:5029 &
+        p2_win=$(_wait_doom_win "$p1_win")
+        if [ -n "$p2_win" ]; then
+            xdotool windowmove "$p2_win" 640 0
+            xdotool windowsize "$p2_win" 640 400
+        fi
         ;;
     deathmatch)
         # shellcheck disable=SC2086
-        SDL_VIDEO_WINDOW_POS="0,0" $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
-            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 0 +win_y 0 \
+        $P1_PULSE_PREFIX "$LZDOOM" $COMMON_OPTS \
+            +vid_defwidth 640 +vid_defheight 400 \
             -deathmatch -host 2 -port 5029 &
-        sleep 2.5
+        p1_win=$(_wait_doom_win "")
+        if [ -z "$p1_win" ]; then
+            echo "ERROR: P1 window did not appear" >&2; exit 1
+        fi
+        xdotool windowmove "$p1_win" 0 0
+        xdotool windowsize "$p1_win" 640 400
+
         # shellcheck disable=SC2086
-        SDL_VIDEO_WINDOW_POS="640,0" $P2_PULSE_PREFIX "$LZDOOM" \
+        $P2_PULSE_PREFIX "$LZDOOM" \
             -iwad $WAD -skill $SKILL -config /tmp/lzdoom-p2.ini +mouse_capturemode 0 \
-            +vid_defwidth 640 +vid_defheight 400 +win_w 640 +win_h 400 +win_x 640 +win_y 0 \
+            +vid_defwidth 640 +vid_defheight 400 \
             -join 127.0.0.1:5029 &
+        p2_win=$(_wait_doom_win "$p1_win")
+        if [ -n "$p2_win" ]; then
+            xdotool windowmove "$p2_win" 640 0
+            xdotool windowsize "$p2_win" 640 400
+        fi
         ;;
 esac
 
-# Detect immediate LZDoom failure (within 1s of launch)
-sleep 1.0
+# Detect immediate LZDoom failure
 if ! pgrep -f lzdoom >/dev/null 2>&1; then
     echo "ERROR: lzdoom failed to launch" >&2
     exit 1
-fi
-
-# ── Force 2P window positions (openbox ignores win_x=0 as default) ────
-if [ "$MODE" != "single" ]; then
-    sleep 3.0
-    p1_pid=$(pgrep -f "lzdoom.*-host 2" | head -1)
-    p2_pid=$(pgrep -f "lzdoom.*-join" | head -1)
-    if [ -n "$p1_pid" ]; then
-        p1_win=$(xdotool search --pid "$p1_pid" 2>/dev/null | head -1)
-        [ -n "$p1_win" ] && xdotool windowmove "$p1_win" 0 0 && xdotool windowsize "$p1_win" 640 400 || true
-    fi
-    if [ -n "$p2_pid" ]; then
-        p2_win=$(xdotool search --pid "$p2_pid" 2>/dev/null | head -1)
-        [ -n "$p2_win" ] && xdotool windowmove "$p2_win" 640 0 && xdotool windowsize "$p2_win" 640 400 || true
-    fi
 fi
 
 # ── Overlay ────────────────────────────────────────────────────────────
