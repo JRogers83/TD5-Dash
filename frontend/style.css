@@ -31,6 +31,7 @@ html, body {
   color: var(--text);
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
 }
 
 /* ── Carousel — full height ───────────────────── */
@@ -38,6 +39,7 @@ html, body {
   width: 1280px;
   height: 400px;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 #views {
