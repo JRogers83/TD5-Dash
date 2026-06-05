@@ -944,10 +944,14 @@ const NAV = (() => {
     });
 
     // Touch handlers
+    // touchmove and touchend use passive:false so preventDefault() can be called
+    // once a swipe is detected — this suppresses the browser's synthetic click
+    // event that fires ~300ms after touchend and can accidentally trigger buttons
+    // near the swipe end position (the "ghost click" problem).
     const el = document.getElementById('carousel');
     el.addEventListener('touchstart', _onStart, { passive: true });
-    el.addEventListener('touchmove', _onMove, { passive: true });
-    el.addEventListener('touchend', _onEnd, { passive: true });
+    el.addEventListener('touchmove', _onMove, { passive: false });
+    el.addEventListener('touchend', _onEnd, { passive: false });
 
     _updateIndicator();
   }
@@ -959,11 +963,15 @@ const NAV = (() => {
   }
 
   function _onMove(e) {
-    if (axis) return;
+    if (axis) {
+      e.preventDefault(); // suppress overscroll and future synthetic clicks
+      return;
+    }
     const dx = Math.abs(e.touches[0].clientX - tx0);
     const dy = Math.abs(e.touches[0].clientY - ty0);
     if (dx > LOCK_PX || dy > LOCK_PX) {
       axis = dx > dy ? 'x' : 'y';
+      e.preventDefault();
     }
   }
 
@@ -978,11 +986,17 @@ const NAV = (() => {
       axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
     }
 
+    let acted = false;
     if (axis === 'x' && Math.abs(dx) > SWIPE_MIN) {
       goView(dx > 0 ? curView + 1 : curView - 1);
+      acted = true;
     } else if (axis === 'y' && Math.abs(dy) > SWIPE_MIN) {
       _stepLayer(dy > 0 ? 1 : -1);
+      acted = true;
     }
+    // Suppress the synthetic click the browser fires ~300ms after touchend —
+    // without this, swipes ending near a button can trigger it (ghost click).
+    if (acted) e.preventDefault();
     axis = null;
   }
 
