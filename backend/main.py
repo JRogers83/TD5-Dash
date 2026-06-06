@@ -24,6 +24,7 @@ from mock_service import (
     mock_spotify_loop,
     mock_system_loop,
     mock_starlink_loop,
+    mock_gps_loop,
     mock_weather_loop,
 )
 
@@ -43,6 +44,9 @@ from mock_service import (
 #
 #   SYSTEM_MOCK=1              System data from mock_service  — static values for Docker UI work
 #   SYSTEM_MOCK=0   (default)  System data from system_service — real CPU temp, backlight, Wi-Fi/BT
+#
+#   GPS_MOCK=1      (default)  GPS data from mock_service  — static coordinates (Norwich, UK)
+#   GPS_MOCK=0                 GPS data from gps_service   — live GPS data from gpsd
 #
 # Docker (development): all mock to 1 except SYSTEM_MOCK (real system data works in Docker too,
 #   it just returns -1 for Pi-specific paths, which the frontend handles gracefully).
@@ -77,6 +81,11 @@ if os.getenv("SYSTEM_MOCK", "0") == "1":
     system_loop = mock_system_loop
 else:
     system_loop = system_service.broadcast_loop
+
+if os.getenv("GPS_MOCK", "1") == "0":
+    from gps_service import broadcast_loop as gps_loop
+else:
+    gps_loop = mock_gps_loop
 
 manager  = ConnectionManager()
 FRONTEND = Path(__file__).parent.parent / "frontend"
@@ -158,6 +167,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(system_loop(manager)),
         asyncio.create_task(starlink_loop(manager)),
         asyncio.create_task(weather_loop(manager)),
+        asyncio.create_task(gps_loop(manager)),
         asyncio.create_task(_discover_chromium_pid()),
         asyncio.create_task(_doom_startup_cleanup()),
     ]
