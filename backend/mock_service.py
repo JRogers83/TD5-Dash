@@ -75,6 +75,13 @@ _MOCK: dict = {
         ],
         "location": "Norwich, UK",
     },
+    "gps": {
+        "lat":         52.6309,
+        "lon":         1.2974,
+        "speed_kmh":   0.0,
+        "heading_deg": 0.0,
+        "fix":         3,
+    },
 }
 
 
@@ -106,6 +113,13 @@ async def mock_starlink_loop(manager: ConnectionManager, interval_s: float = 2.0
     """Publishes Starlink status."""
     while True:
         await manager.broadcast({"type": "starlink", "data": _MOCK["starlink"]})
+        await asyncio.sleep(interval_s)
+
+
+async def mock_gps_loop(manager: ConnectionManager, interval_s: float = 1.0) -> None:
+    """Broadcasts a static GPS fix (parked at mock location)."""
+    while True:
+        await manager.broadcast({"type": "gps", "data": _MOCK["gps"]})
         await asyncio.sleep(interval_s)
 
 

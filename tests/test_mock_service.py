@@ -73,6 +73,13 @@ EXPECTED_SCHEMAS = {
         "forecast": list,
         "location": str,
     },
+    "gps": {
+        "lat":         (int, float),
+        "lon":         (int, float),
+        "speed_kmh":   (int, float),
+        "heading_deg": (int, float),
+        "fix":         int,
+    },
 }
 
 
@@ -174,6 +181,17 @@ class TestWeatherFields:
                 assert field in entry, f"weather.forecast entry missing: {field}"
 
 
+class TestGPSFields:
+    def test_has_all_required_fields(self):
+        for field in EXPECTED_SCHEMAS["gps"]:
+            assert field in _MOCK["gps"], f"gps missing field: {field}"
+
+    def test_field_types(self):
+        for field, expected_type in EXPECTED_SCHEMAS["gps"].items():
+            assert isinstance(_MOCK["gps"][field], expected_type), \
+                f"gps.{field} has wrong type: {type(_MOCK['gps'][field])}"
+
+
 # ── Value sanity checks ─────────────────────────────────────────────────────
 
 class TestMockValueSanity:
@@ -188,4 +206,11 @@ class TestMockValueSanity:
 
     def test_brightness_range(self):
         assert 0 <= _MOCK["system"]["brightness"] <= 255
+
+    def test_gps_fix_is_valid(self):
+        assert _MOCK["gps"]["fix"] in (0, 2, 3)
+
+    def test_gps_lat_lon_range(self):
+        assert -90  <= _MOCK["gps"]["lat"] <= 90
+        assert -180 <= _MOCK["gps"]["lon"] <= 180
 
