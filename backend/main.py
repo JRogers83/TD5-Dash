@@ -202,6 +202,7 @@ async def health() -> dict:
             "spotify":  _svc_status("SPOTIFY_MOCK"),
             "starlink": _svc_status("STARLINK_MOCK"),
             "weather":  _svc_status("WEATHER_MOCK"),
+            "gps":      _svc_status("GPS_MOCK"),
             "system":   "mock" if os.getenv("SYSTEM_MOCK", "0") == "1" else "live",
         },
         "ws_clients": len(manager._connections),
