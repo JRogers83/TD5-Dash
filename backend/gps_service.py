@@ -88,7 +88,7 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
         try:
             session = gpsd.gps(
                 host=GPSD_HOST,
-                port=str(GPSD_PORT),
+                port=GPSD_PORT,
                 mode=gpsd.WATCH_ENABLE | gpsd.WATCH_NEWSTYLE,
             )
             log.info("gpsd connected. Polling for GPS fix.")
@@ -100,7 +100,7 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
 
                 data = _parse_tpv(report)
                 if data is None:
-                    _broadcast(_NO_FIX_DATA)
+                    _broadcast({**_NO_FIX_DATA})
                     shared_state.gps_lat         = None
                     shared_state.gps_lon         = None
                     shared_state.gps_speed_kmh   = None
@@ -115,11 +115,11 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                     shared_state.gps_fix         = data["fix"]
 
         except Exception:
-            if retry_delay == _RETRY_MIN_S:
-                log.exception("gpsd connection error — retrying in %.0f s", retry_delay)
-            else:
+            if retry_delay > _RETRY_MIN_S:
                 log.warning("gpsd unavailable — retrying in %.0f s", retry_delay)
-            _broadcast(_NO_FIX_DATA)
+            else:
+                log.exception("gpsd connection error — retrying in %.0f s", retry_delay)
+            _broadcast({**_NO_FIX_DATA})
             shared_state.gps_fix = 0
             time.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, _RETRY_MAX_S)
