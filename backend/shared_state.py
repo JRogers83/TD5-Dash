@@ -18,6 +18,9 @@ from __future__ import annotations
 # GPS (set by starlink_service when a fix is available)
 gps_lat: float | None = None
 gps_lon: float | None = None
+gps_speed_kmh: float | None = None   # GPS speed in km/h (set by gps_service)
+gps_heading_deg: float | None = None   # GPS heading degrees true (set by gps_service)
+gps_fix: int = 0               # 0=no data, 2=2D fix, 3=3D fix (set by gps_service)
 
 # GPIO state (set by ignition_service / future GPIO service)
 override_mode: bool = False
