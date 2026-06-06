@@ -331,10 +331,8 @@ def wal_checkpoint() -> None:
     Safe to call at any time. Used during graceful shutdown to ensure no
     pending writes are left in the WAL when power is cut.
     Uses a separate connection so it does not interfere with in-flight queries.
+    Raises on failure — callers are responsible for error handling.
     """
-    try:
-        with sqlite3.connect(str(_DB_PATH)) as conn:
-            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        log.debug("WAL checkpoint complete")
-    except Exception as exc:
-        log.warning("WAL checkpoint failed: %s", exc)
+    with sqlite3.connect(str(_DB_PATH)) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    log.debug("WAL checkpoint complete")
