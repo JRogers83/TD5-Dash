@@ -323,3 +323,18 @@ def get_history(range_name: str) -> list[dict]:
         ]
     finally:
         conn.close()
+
+
+def wal_checkpoint() -> None:
+    """Flush the SQLite WAL journal to the main database file.
+
+    Safe to call at any time. Used during graceful shutdown to ensure no
+    pending writes are left in the WAL when power is cut.
+    Uses a separate connection so it does not interfere with in-flight queries.
+    """
+    try:
+        with sqlite3.connect(str(_DB_PATH)) as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        log.debug("WAL checkpoint complete")
+    except Exception as exc:
+        log.warning("WAL checkpoint failed: %s", exc)
