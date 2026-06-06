@@ -46,7 +46,8 @@ apt-get install -y --no-install-recommends \
     libsamplerate0 \
     gpsd \
     gpsd-clients \
-    python3-gps
+    python3-gps \
+    fonts-noto-color-emoji
 
 # ── GPS (USB receiver via gpsd) ────────────────────────────────────────────────
 echo "▸ Configuring gpsd for u-blox USB GPS receiver..."
@@ -303,7 +304,7 @@ SUDOERS_FILE="/etc/sudoers.d/td5-dash"
 cat > "$SUDOERS_FILE" <<EOF
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart td5-dash
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
-$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y freedoom openbox libsamplerate0 python3-evdev
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y freedoom openbox libsamplerate0 python3-evdev fonts-noto-color-emoji
 EOF
 chmod 440 "$SUDOERS_FILE"
 echo "  Sudoers entry written to $SUDOERS_FILE"

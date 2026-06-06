@@ -475,7 +475,8 @@ async def system_update() -> dict:
     # should not prevent code updates from landing.
     apt = subprocess.run(
         ["sudo", "apt-get", "install", "-y",
-         "freedoom", "openbox", "libsamplerate0", "python3-evdev"],
+         "freedoom", "openbox", "libsamplerate0", "python3-evdev",
+         "fonts-noto-color-emoji"],
         capture_output=True, text=True,
     )
     if apt.returncode != 0:
