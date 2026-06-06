@@ -374,8 +374,7 @@ Starlink polls the dish's local gRPC API at `192.168.100.1` — this only works 
 STARLINK_MOCK=0
 ```
 
-GPS data (shown on the Starlink view and used by the weather service for location) requires enabling it in the Starlink app:
-**Settings → Advanced → Debug data → GPS**
+GPS data is provided by the dedicated USB GPS receiver — see [Section 12 — GPS Setup](#12-gps-setup-usb-receiver) below. The Starlink view shows the GPS fix status from that receiver, not from the dish.
 
 ---
 
@@ -440,3 +439,42 @@ git pull
 .venv/bin/pip install -q -r backend/requirements.txt
 sudo systemctl restart td5-dash
 ```
+
+---
+
+## 12. GPS Setup (USB Receiver)
+
+### Hardware
+Connect the u-blox UBX-G7020-KT to any USB port. It appears as `/dev/ttyACM0`.
+
+### Software (handled by setup.sh)
+```bash
+sudo apt install gpsd gpsd-clients python3-gps
+```
+
+`setup.sh` configures `/etc/default/gpsd` automatically. If needed, verify:
+```
+DEVICES="/dev/ttyACM0"
+GPSD_OPTIONS="-n"
+START_DAEMON="true"
+```
+
+### Verify
+```bash
+# Check device is recognised
+ls /dev/ttyACM*
+
+# Test gpsd is reading data
+cgps -s
+# Should show fix within ~90 seconds with clear sky view
+
+# Confirm Python library can read
+python3 -c "import gps; s = gps.gps(); print(next(s))"
+```
+
+### Enable real GPS
+Set `GPS_MOCK=0` in `.env` and restart the service.
+
+> **hw-verify:** Device path `/dev/ttyACM0` is standard for this receiver on Bookworm
+> but may vary. Run `ls /dev/ttyACM*` after plugging in to confirm. First fix after
+> cold boot may take up to 90 seconds outdoors with clear sky view.

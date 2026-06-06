@@ -126,7 +126,20 @@ The Pi 5 has no 3.5mm audio jack. If the CarPiHAT PRO 5 is used, its built-in 19
 
 Head unit — Current: Pioneer DEH-1320MP (front 3.5mm aux only, no Bluetooth). Replacement recommended: any cheap Bluetooth single-DIN mechless unit. Pioneer MVH-S320BT identified as strong candidate. Head unit decision decoupled from project.
 
-### 3.7 Power System
+### 3.7 GPS
+
+| Parameter | Value |
+|-----------|-------|
+| Receiver | u-blox UBX-G7020-KT USB GPS Receiver |
+| Interface | USB (appears as `/dev/ttyACM0`) |
+| Protocol | NMEA 0183 via gpsd |
+| Library | `gps` (Python gpsd client) |
+
+The GPS receiver connects to any USB port on the Pi. `gpsd` manages the device and provides a standard socket interface consumed by the GPS backend service. The GPS WebSocket message format is `{"type": "gps", "data": {"lat": 0, "lon": 0, "speed_kmh": 0, "heading_deg": 0, "fix": 3}}` — `fix` is the gpsd fix type (0 = no fix, 2 = 2D, 3 = 3D). Note: `alt` was present in an earlier Starlink-sourced GPS format but has been removed; NMEA altitude data will be added in future if needed.
+
+GPS data is used by the weather service for live location-based forecasts (falling back to `WEATHER_LAT/LON` env vars when no fix is available).
+
+### 3.8 Power System
 
 Deferred to Phase 4 (vehicle install). Bench prototype uses standard USB-C PSU.
 
@@ -186,7 +199,7 @@ Five horizontally-swipeable views at display resolution (1280×400 landscape). T
 | 1 — Engine Gauges | RPM, boost, throttle radial gauges · battery voltage, coolant, air and fuel temp stat tiles |
 | 2 — Spotify | Album art · track/artist/album · progress bar · prev/play-pause/next · like button · playlist browser · spectrum visualiser (real audio via PulseAudio loopback / getUserMedia, simulation fallback) |
 | 3 — Victron | Battery SoC arc gauge · voltage, current, solar yield, DC-DC charger state · embedded weather panel (Open-Meteo, WMO icon, temp, wind, humidity) |
-| 4 — Starlink | Status / obstruction / GPS stat tiles · download / upload / latency / packet loss · uptime · active alerts |
+| 4 — Starlink | Status / obstruction / GPS stat tiles · download / upload / latency / packet loss · uptime · active alerts · GPS fix status (from u-blox UBX-G7020-KT via gpsd) |
 | 5 — Settings | Connectivity tiles (Wi-Fi, BT, override, data feed, Starlink) · day/night brightness bars · system metrics (CPU temp/load, RAM, disk, uptime, throttle) |
 
 ### 4.4 Shutdown Sequence
