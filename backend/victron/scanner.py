@@ -234,16 +234,16 @@ class VictronScanner:
         """
         Extract solar yield and charge state from an MPPT advertisement.
 
-        victron-ble SolarCharger API:
-          parsed.get_device_state()  → DeviceState enum | None
+        victron-ble SolarChargerData API (verified against 0.9.3):
+          parsed.get_charge_state()  → ChargeState enum | None
           parsed.get_yield_today()   → float | None  (kWh — converted to Wh below)
           parsed.get_solar_power()   → float | None  (W, useful for future display)
 
-        TODO: verify method names against victron-ble source for your installed
-              version. Also confirm yield_today units (kWh vs Wh varies by version).
+        Note: get_device_state() was renamed to get_charge_state() in victron-ble 0.9.x.
+        yield_today units confirmed as kWh in 0.9.3.
         """
         try:
-            state_enum  = parsed.get_device_state()
+            state_enum  = parsed.get_charge_state()
             yield_today = parsed.get_yield_today()     # kWh from library
 
             if yield_today is not None:
@@ -265,23 +265,16 @@ class VictronScanner:
         """
         Extract DC-DC charger state and input voltage from an Orion XS advertisement.
 
-        The Orion XS broadcasts as a DC-DC converter. victron-ble may expose it
-        via an OrionXs or DcDcConverter device class — detect_device_type handles
-        the dispatch automatically.
-
-        victron-ble Orion XS / DcDcConverter API:
-          parsed.get_device_state()  → DeviceState enum | None  (Off/Bulk/Absorption/Float)
+        victron-ble OrionXSData API (verified against 0.9.3):
+          parsed.get_charge_state()  → ChargeState enum | None  (Off/Bulk/Absorption/Float)
           parsed.get_input_voltage() → float | None  (vehicle / alternator voltage in V)
           parsed.get_output_current() → float | None  (charging current in A)
           parsed.get_charger_error()  → ChargerError enum | None
 
-        TODO: verify method names against victron-ble source for your installed
-              version — the Orion XS is a newer device and API names may differ
-              from the MPPT. If get_input_voltage() doesn't exist, try
-              get_input_voltage_dc() or similar.
+        Note: get_device_state() was renamed to get_charge_state() in victron-ble 0.9.x.
         """
         try:
-            state_enum   = parsed.get_device_state()
+            state_enum   = parsed.get_charge_state()
             input_v      = parsed.get_input_voltage()
 
             if state_enum is not None:
