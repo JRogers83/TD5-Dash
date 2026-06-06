@@ -478,3 +478,53 @@ Set `GPS_MOCK=0` in `.env` and restart the service.
 > **hw-verify:** Device path `/dev/ttyACM0` is standard for this receiver on Bookworm
 > but may vary. Run `ls /dev/ttyACM*` after plugging in to confirm. First fix after
 > cold boot may take up to 90 seconds outdoors with clear sky view.
+
+---
+
+## Witty Pi 5 HAT+ Setup
+
+### Wiring
+```
+Leisure battery (+12V)
+  ├─→ 12V relay (coil on ignition feed)  →  Witty Pi VIN screw terminal
+  └─→ 12V→5V epoxy buck converter (permanent)  →  Witty Pi USB-C
+```
+Place inline fuse (3A) on the supply to the relay.
+
+### Hardware Installation
+1. Fit Witty Pi 5 onto the Pi GPIO header (uses GPIO 4 and 17 internally)
+2. Connect Witty Pi VIN screw terminal to the relay switched output
+3. Connect the 5V buck converter output to Witty Pi USB-C
+
+### Software Installation (manual — requires internet + interactive confirmation)
+```bash
+curl -L https://install.ultronics.co.uk/wittypi5plus.sh | sudo bash
+```
+
+### Pre-shutdown Hook
+```bash
+cp ~/TD5-Dash/deploy/beforeShutdown.sh ~/wittypi/beforeShutdown.sh
+chmod +x ~/wittypi/beforeShutdown.sh
+```
+
+### Configuration
+Set in `.env`:
+```
+WITTYPI_ENABLED=1
+# IGNITION_SENSE_PIN=   ← leave empty when using Witty Pi
+```
+
+Configure VIN shutdown threshold using the Witty Pi configuration tool to match the relay drop-out voltage on your specific relay.
+
+### Verify
+```bash
+# Confirm I2C addresses (no conflict with touchscreen at 0x38)
+i2cdetect -y 1
+# Should show 0x51 (Witty Pi RTC) and 0x38 (Waveshare touch)
+
+# Test pre-shutdown hook manually
+curl -X POST http://localhost:8000/system/shutdown-prepare
+# Expected: {"ok": true, "cleaned_up": ["db_checkpointed", "shutdown_logged"]}
+```
+
+> **hw-verify:** VIN threshold, shutdown delay, and `beforeShutdown.sh` hook invocation must all be verified on real hardware. The hook path (`~/wittypi/beforeShutdown.sh`) may vary between UUGear firmware versions — confirm the correct path after running the install script.

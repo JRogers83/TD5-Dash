@@ -66,7 +66,7 @@ No-drill mount into Defender ashtray opening. Pod is open-backed into dash cavit
 | NVMe FFC | Pimoroni 50mm PCIe Pipe cable (replaces standard 35mm, allows NVMe Base to be mounted separately from Pi inside pod) |
 | Cooling | Pi 5 Active Cooler (clip-on heatsink + fan) |
 
-The NVMe Base connects to the Pi 5's dedicated PCIe FFC port and is mounted separately within the pod cavity, connected by the 50mm FFC cable. This keeps the Pi's underside clear for pogo pin contact with the display and provides better thermal separation. The Pi mounts directly on the display PCB via pogo pins (carrying 5V power and I2C touch), with the Active Cooler on top, then a GPIO riser for the CarPiHAT.
+The NVMe Base connects to the Pi 5's dedicated PCIe FFC port and is mounted separately within the pod cavity, connected by the 50mm FFC cable. This keeps the Pi's underside clear for pogo pin contact with the display and provides better thermal separation. The Pi mounts directly on the display PCB via pogo pins (carrying 5V power and I2C touch), with the Active Cooler on top, then the Witty Pi 5 HAT+ on the GPIO header.
 
 ### 3.4 OBD / Engine Data Interface
 
@@ -139,25 +139,37 @@ The GPS receiver connects to any USB port on the Pi. `gpsd` manages the device a
 
 GPS data is used by the weather service for live location-based forecasts (falling back to `WEATHER_LAT/LON` env vars when no fix is available).
 
-### 3.8 Power System
+### 3.8 Power Management — Witty Pi 5 HAT+
 
-Deferred to Phase 4 (vehicle install). Bench prototype uses standard USB-C PSU.
+**Hardware:** Witty Pi 5 HAT+ (UUGear). Replaces the earlier discrete component design (optoisolator + 7805 + relay circuit).
 
-**Preferred: CarPiHAT PRO 5** (£110, persistently out of stock — DIY discrete now the more likely path)
+**Wiring topology:**
+```
+Leisure battery (+12V)
+  ├─→ 12V relay (coil on ignition feed) → Witty Pi 5 VIN screw terminal
+  │     (running power + shutdown trigger)
+  └─→ Epoxy-potted 12V→5V buck converter (permanent standby)
+        └─→ Witty Pi 5 USB-C (keeps RTC alive when ignition is off)
+```
 
-TJD CarPiHAT PRO 5 from The Pi Hut. All-in-one: 12V to 5V 5A buck (Pi 5 validated), safe shutdown via GPIO, <1mA off draw, 5 opto-isolated 12V inputs, 2x 12V switched outputs (1A), CAN bus port (not useful for TD5 K-Line), RTC, I2C bus, Burr-Brown DAC with 3.5mm jack, optional cooling fan/shroud. Note: OpenAuto Pro (BlueWave Studio) is defunct. The CarPiHAT is independent hardware by TJD, software-agnostic. Stock has remained unavailable; the DIY discrete fallback is now the more likely path to vehicle install.
+**Shutdown sequence:**
+1. Ignition off → 12V relay drops → Witty Pi detects VIN loss
+2. After configured delay → Witty Pi daemon runs `~/wittypi/beforeShutdown.sh`
+3. `beforeShutdown.sh` POSTs to `/system/shutdown-prepare` (10s timeout)
+4. Backend performs cleanup → returns 200 (proceed) or 409 (override active, abort)
+5. Witty Pi daemon calls `shutdown -h now`
+6. Pi halts → Witty Pi cuts power after configurable timeout
 
-**CarPiHAT Mounting**
+**I2C addresses:**
+| Device | Address |
+|--------|---------|
+| Witty Pi 5 (RTC) | 0x51 |
+| Waveshare 7.9" touch (Goodix) | 0x38 |
+No conflict.
 
-GPIO riser required with 20mm M2.5 standoffs, 12mm M2.5 screws (top), 8mm M2.5 screws (underside) to accommodate Active Cooler beneath. Stack: Display PCB → pogo pins → Pi 5 → Active Cooler → GPIO Riser → 20mm standoffs → CarPiHAT. NVMe Base mounted separately via 50mm FFC.
+**Override mode (future):** `shared_state.override_mode = True` causes `/system/shutdown-prepare` to return 409, aborting the Witty Pi's shutdown. This is the hook for a future "stay on after ignition" UI button.
 
-**Fallback: DIY discrete (~£25)**
-
-12V-to-5V 5A buck converter, optocouplers, relay, diode OR circuit, inline fuse. Requires separate USB DAC. Pi 5 PMIC may need USB-C PD trigger board for full 5A delivery.
-
-**Override Power**
-
-Leisure battery via Carling Contura V switch, bypassing ignition relay. Software detects override mode, shows status indicator, auto-timeout default 60 min.
+**Legacy discrete path:** `ignition_service.py` remains in the codebase for the optoisolator-based ignition detection circuit. Activated by setting `IGNITION_SENSE_PIN` in `.env`. Do not set both `WITTYPI_ENABLED=1` and `IGNITION_SENSE_PIN` simultaneously.
 
 ---
 
@@ -204,13 +216,13 @@ Five horizontally-swipeable views at display resolution (1280×400 landscape). T
 
 ### 4.4 Shutdown Sequence
 
-Ignition off → 30s grace period (cancellable) → `shutdown -h now` → CarPiHAT hardware timer (5s) → power relay cuts 12V.
+Ignition off → 12V relay drops → Witty Pi detects VIN loss → configured delay → `beforeShutdown.sh` POSTs to `/system/shutdown-prepare` → backend returns 200 (proceed) or 409 (override active, abort) → `shutdown -h now` → Witty Pi cuts power after configurable timeout.
 
 ---
 
 ## 5. Physical Assembly
 
-Display PCB at front of pod, viewable area aligned with fascia opening via 3D-printed bezel. Pi 5 mounted on display back via pogo pins. Active Cooler on SoC. GPIO Riser. CarPiHAT PRO 5 on riser via 20mm standoffs. NVMe Base mounted separately via 50mm PCIe Pipe FFC. VAG KKL cable exits pod into dash cavity to OBD-II port.
+Display PCB at front of pod, viewable area aligned with fascia opening via 3D-printed bezel. Pi 5 mounted on display back via pogo pins. Active Cooler on SoC. Witty Pi 5 HAT+ on GPIO header. NVMe Base mounted separately via 50mm PCIe Pipe FFC. VAG KKL cable exits pod into dash cavity to OBD-II port. 12V relay and epoxy-potted 12V→5V buck converter mounted in dash cavity; relay coil on ignition feed, switched output to Witty Pi VIN; buck output (5V permanent) to Witty Pi USB-C.
 
 ---
 
@@ -222,7 +234,7 @@ Display PCB at front of pod, viewable area aligned with fascia opening via 3D-pr
 | 1 | **Bench Prototype** — FastAPI backend, WebSocket hub, mock data service, five-view kiosk UI scaffold, Docker dev environment. | Complete |
 | 2 | **OBD Integration** — TD5 K-Line service (`backend/obd/`). Fast-init, seed-key auth, cyclic PID polling. | Complete (vehicle-verified 2026-03-21) |
 | 3 | **Victron, Spotify, Weather, Starlink** — Victron BLE service, Spotify Web API + Connect (Raspotify), Open-Meteo weather, Starlink Mini gRPC, playlist browser. | Complete (plus ongoing UI polish) |
-| 4 | **Power System & Vehicle Install** — CarPiHAT PRO 5 (or DIY). Override switch. MUD Mini Pod + 3D-printed bezel. Cable routing. | Pending — Power system hardware TBD: CarPiHAT PRO 5 out of stock, DIY discrete power (buck converter + optocouplers) identified as fallback |
+| 4 | **Power System & Vehicle Install** — Witty Pi 5 HAT+. 12V relay + permanent 5V standby buck. Override switch (future). MUD Mini Pod + 3D-printed bezel. Cable routing. | Pending — Power system architecture resolved: Witty Pi 5 HAT+ with 12V relay on ignition feed and epoxy-potted 12V→5V buck for permanent standby |
 | 5 | **Polish** — Splash screen, gauge calibration, day/night brightness, boot time optimisation, stress testing. | In Progress — Plymouth splash, sidelights auto day/night, 2D navigation (4 engine layers + 4 settings layers), SQLite persistence (settings/pages/history), DTC fault codes + lookup, throttle calibration wizard, diagnostics screen, engine history charts, trip computer, coolant trend indicator, test suite (99 tests), reverse geocoding, OTA update, WebSocket reconnect resync, health check endpoint |
 
 ---
@@ -232,8 +244,7 @@ Display PCB at front of pod, viewable area aligned with fascia opening via 3D-pr
 - ~~Display resolution: confirm 400×1280 vs 400×1480 with seller.~~ RESOLVED: confirmed 1280×400 landscape (dtoverlay rotates panel output).
 - ~~KKL cable FTDI authenticity: test with PyFtdi on receipt.~~ RESOLVED: confirmed working on vehicle 2026-03-21 with genuine FTDI FT232RL chip.
 - ~~TD5 PID coverage: empirical testing needed in Phase 2.~~ RESOLVED: all PIDs confirmed on vehicle. See `documentation/TD5-ECU-Confirmed-Protocol.md`.
-- CarPiHAT PRO 5 stock: UNRESOLVED — persistently out of stock at The Pi Hut; DIY discrete power (buck converter + optocouplers) identified as fallback path.
-- CarPiHAT I2C address conflicts with display touch controller. (Open — hardware not yet arrived)
+- ~~CarPiHAT PRO 5 stock: UNRESOLVED.~~ RESOLVED: CarPiHAT dropped in favour of Witty Pi 5 HAT+. Power architecture: 12V relay on ignition feed to Witty Pi VIN + epoxy-potted 12V→5V buck to Witty Pi USB-C for permanent standby. No I2C conflict (Witty Pi RTC at 0x51; Waveshare touch at 0x38).
 - Head unit replacement model and BT dual-pairing confirmation. (Open)
 - ~~GPIO pin allocation: finalise during Phase 1.~~ RESOLVED: documented in carpihat_service.py; can be adapted for any GPIO circuit.
 - BLE coexistence: two Victron BLE + A2DP audio simultaneously. (Pending — needs hardware)
@@ -247,8 +258,9 @@ Display PCB at front of pod, viewable area aligned with fascia opening via 3D-pr
 |----------|-----|
 | Waveshare 7.9" DSI Wiki | www.waveshare.com/wiki/7.9inch_DSI_LCD |
 | MUD Mini Pod | www.mudstuff.co.uk/products/mini-mud-pod |
-| CarPiHAT PRO 5 | thepihut.com/products/carpihat-pro-5-car-interface-dac-for-raspberry-pi-5 |
-| CarPiHAT GitHub | github.com/gecko242/CarPiHat/wiki |
+| Witty Pi 5 HAT+ | uugear.com/product/witty-pi-5-hat-plus/ |
+| Witty Pi 5 GitHub | github.com/uugear/Witty-Pi-5 |
+| CarPiHAT PRO 5 (legacy) | thepihut.com/products/carpihat-pro-5-car-interface-dac-for-raspberry-pi-5 |
 | pyTD5Tester | github.com/hairyone/pyTD5Tester |
 | Ekaitza_Itzali | github.com/EA2EGA/Ekaitza_Itzali |
 | td5keygen | github.com/pajacobson/td5keygen |
