@@ -520,6 +520,25 @@ if [[ "$_CF_ANSWER" =~ ^[Yy]$ ]]; then
     fi
 fi
 
+# ── Witty Pi 5 HAT+ ────────────────────────────────────────────────────────────
+# The UUGear install script must be run MANUALLY after first boot.
+# It downloads from the internet and requires interactive confirmation.
+#
+# Step 1: Run the UUGear installer:
+#   curl -L https://install.ultronics.co.uk/wittypi5plus.sh | sudo bash
+#
+# Step 2: Copy the pre-shutdown hook to the Witty Pi scripts directory:
+#   cp "$REPO_DIR/deploy/beforeShutdown.sh" ~/wittypi/beforeShutdown.sh
+#   chmod +x ~/wittypi/beforeShutdown.sh
+#
+# Step 3: Set WITTYPI_ENABLED=1 in .env and restart the service.
+#
+# Step 4: Configure VIN shutdown threshold using the Witty Pi configuration tool.
+#
+# See documentation/pi-setup.md — Witty Pi 5 Setup section for full details.
+# hw-verify: all Witty Pi behaviour requires physical hardware to test.
+echo "▸ Witty Pi 5: manual install required — see documentation/pi-setup.md"
+
 # ── Done ───────────────────────────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════╗"
