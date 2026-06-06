@@ -18,6 +18,12 @@ import game_service
 import spotify_service
 import system_service
 from ws_hub import ConnectionManager
+
+# Witty Pi power management — active when WITTYPI_ENABLED=1
+if os.getenv("WITTYPI_ENABLED", "0") == "1":
+    import wittypi_service
+else:
+    wittypi_service = None  # type: ignore[assignment]
 from mock_service import (
     mock_engine_loop,
     mock_victron_loop,
@@ -159,6 +165,10 @@ async def _doom_startup_cleanup() -> None:
 async def lifespan(app: FastAPI):
     db.init_db()
     db.purge_old_history()
+
+    # Witty Pi startup checks (logs I2C info, warns on conflicting config)
+    if wittypi_service is not None:
+        wittypi_service.startup_checks()
 
     tasks = [
         asyncio.create_task(engine_loop(manager)),
@@ -507,6 +517,10 @@ async def system_shutdown() -> dict:
 
 # Game-mode router (before static catch-all).
 app.include_router(game_service.router)
+
+# Witty Pi router (registered only when WITTYPI_ENABLED=1)
+if wittypi_service is not None:
+    app.include_router(wittypi_service.router)
 
 # Static files mount last so /ws, /api/*, /spotify/*, /system/* are matched first.
 app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="static")
