@@ -208,16 +208,15 @@ class VictronScanner:
         """
         Extract SoC, voltage, and current from a SmartShunt advertisement.
 
-        victron-ble SmartShunt API:
-          parsed.get_state_of_charge() → float | None  (percent, 0–100)
-          parsed.get_voltage()         → float | None  (volts)
-          parsed.get_current()         → float | None  (amps, negative = discharging)
+        victron-ble BatteryMonitorData API (verified against 0.9.3):
+          parsed.get_soc()     → float | None  (percent, 0–100)
+          parsed.get_voltage() → float | None  (volts)
+          parsed.get_current() → float | None  (amps, negative = discharging)
 
-        TODO: verify method names against victron-ble source for your installed
-              version — names have changed between library versions.
+        Note: get_state_of_charge() was renamed to get_soc() in victron-ble 0.9.x.
         """
         try:
-            soc     = parsed.get_state_of_charge()
+            soc     = parsed.get_soc()
             voltage = parsed.get_voltage()
             current = parsed.get_current()
 
