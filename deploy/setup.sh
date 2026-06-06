@@ -43,7 +43,21 @@ apt-get install -y --no-install-recommends \
     python3-gi \
     gir1.2-gtk-3.0 \
     openbox \
-    libsamplerate0
+    libsamplerate0 \
+    gpsd \
+    gpsd-clients \
+    python3-gps
+
+# ── GPS (USB receiver via gpsd) ────────────────────────────────────────────────
+echo "▸ Configuring gpsd for u-blox USB GPS receiver..."
+GPSD_DEFAULT="/etc/default/gpsd"
+if [ -f "$GPSD_DEFAULT" ]; then
+    sed -i 's|^DEVICES=.*|DEVICES="/dev/ttyACM0"|'    "$GPSD_DEFAULT" 2>/dev/null || true
+    sed -i 's|^GPSD_OPTIONS=.*|GPSD_OPTIONS="-n"|'    "$GPSD_DEFAULT" 2>/dev/null || true
+    sed -i 's|^START_DAEMON=.*|START_DAEMON="true"|'   "$GPSD_DEFAULT" 2>/dev/null || true
+    echo "  gpsd configured for /dev/ttyACM0 (hw-verify: confirm device path after plugging in)"
+fi
+systemctl enable gpsd 2>/dev/null || true
 
 # ── ZMusic shared library (bundled with LZDoom) ────────────────────────────────
 echo "▸ Installing ZMusic shared library..."
