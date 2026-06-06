@@ -1109,6 +1109,7 @@ html, body {
   justify-content: center;
   font-size: 192px;
   line-height: 1;
+  font-family: 'Noto Color Emoji', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 .wx-temp {
