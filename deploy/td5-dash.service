@@ -1,7 +1,6 @@
 [Unit]
 Description=TD5 Dashboard Backend
-After=network-online.target
-Wants=network-online.target
+After=network.target
 
 [Service]
 Type=simple
@@ -13,6 +12,7 @@ Environment="DISPLAY=:0"
 ExecStart=__REPO_DIR__/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=15
 StandardOutput=journal
 StandardError=journal
 
