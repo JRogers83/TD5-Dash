@@ -68,6 +68,8 @@ No-drill mount into Defender ashtray opening. Pod is open-backed into dash cavit
 
 The NVMe Base connects to the Pi 5's dedicated PCIe FFC port and is mounted separately within the pod cavity, connected by the 50mm FFC cable. This keeps the Pi's underside clear for pogo pin contact with the display and provides better thermal separation. The Pi mounts directly on the display PCB via pogo pins (carrying 5V power and I2C touch), with the Active Cooler on top, then the Witty Pi 5 HAT+ on the GPIO header.
 
+> **USB hub note:** A USB hub must be connected to one of the Pi 5's USB 2.0 ports (black ports). HID devices such as game controllers and keyboards do not enumerate reliably on USB 3.0 (blue ports) on the Pi 5.
+
 ### 3.4 OBD / Engine Data Interface
 
 > **IMPORTANT:** The TD5 ECU does NOT speak standard OBD-II. A standard ELM327 adapter will not work.

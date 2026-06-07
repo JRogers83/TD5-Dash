@@ -16,6 +16,9 @@ Follow the sections in order — each step depends on the previous one.
 | USB-C power supply | Official Pi 5 27W PSU recommended |
 | VAG-COM KKL 409.1 cable | Must have genuine FTDI FT232RL chip — clones will not work |
 | Your development machine | To flash storage and SSH in for initial setup |
+| USB hub (optional) | For game controllers and other HID devices — see note below |
+
+> **USB Hub:** Connect to one of the Pi 5's USB 2.0 ports (the black ports), not a USB 3.0 port (the blue ports). Game controllers and HID devices do not enumerate correctly when connected via USB 3.0 on the Pi 5.
 
 **Storage — choose one:**
 
@@ -228,16 +231,18 @@ You need the MAC address and encryption key for each Victron device.
 
 Add the values to `.env`:
 
+> **Important:** MAC addresses must be in colon-separated UPPERCASE format, e.g. `E2:3A:96:CF:21:76`. Without colons (e.g. `E23A96CF2176`), `victron_ble` never matches advertisements and the scanner silently receives no data.
+
 ```ini
 VICTRON_MOCK=0
 
-VICTRON_SHUNT_MAC=aa:bb:cc:dd:ee:ff
+VICTRON_SHUNT_MAC=E2:3A:96:CF:21:76
 VICTRON_SHUNT_KEY=0123456789abcdef0123456789abcdef
 
-VICTRON_MPPT_MAC=aa:bb:cc:dd:ee:ff
+VICTRON_MPPT_MAC=E2:3A:96:CF:21:76
 VICTRON_MPPT_KEY=0123456789abcdef0123456789abcdef
 
-VICTRON_ORION_MAC=aa:bb:cc:dd:ee:ff
+VICTRON_ORION_MAC=E2:3A:96:CF:21:76
 VICTRON_ORION_KEY=0123456789abcdef0123456789abcdef
 ```
 
@@ -528,3 +533,35 @@ curl -X POST http://localhost:8000/system/shutdown-prepare
 ```
 
 > **hw-verify:** VIN threshold, shutdown delay, and `beforeShutdown.sh` hook invocation must all be verified on real hardware. The hook path (`~/wittypi/beforeShutdown.sh`) may vary between UUGear firmware versions — confirm the correct path after running the install script.
+
+---
+
+## Doom Mode — Controllers
+
+Doom mode (LZDoom split-screen, accessed from the Settings view) requires two USB game controllers. Connect them via a USB hub attached to one of the Pi 5's **USB 2.0 ports** (black ports — see the USB Hub note in the Hardware section above).
+
+### Confirmed working controllers (tested 2026-06-07)
+
+| Slot | Device | USB ID |
+|------|--------|--------|
+| js0 | Personal Communication Systems SNES Gamepad | 0810:e501 |
+| js1 | DragonRise Inc. PC Twin Shock Gamepad | 0079:0006 |
+
+Both enumerate correctly under the standard Linux HID driver with no additional configuration. The two controllers use different chipsets — this is required for the LZDoom per-device joystick INI configuration (`games/doom/lzdoom-p1.ini` and `games/doom/lzdoom-p2.ini`) to apply independently to each controller.
+
+### Verify controllers are recognised
+
+```bash
+ls /dev/input/js*
+# Expected: /dev/input/js0  /dev/input/js1
+
+# Check the pi user is in the input group (required for js* access):
+id pi | grep input
+```
+
+If the `input` group is missing, `deploy/setup.sh` adds it — re-run the script or add manually:
+
+```bash
+sudo usermod -aG input pi
+# Log out and back in for the change to take effect
+```
