@@ -41,15 +41,11 @@ def make_logo(src_path: str, dest_path: str, rotation: int) -> None:
     black.paste(img, (0, 0), img)  # img's alpha used as mask
     img = black.convert("RGB")
 
-    # Pre-rotate for the raw (portrait) framebuffer so the logo appears upright
-    # after the kernel applies its display rotation.
-    # For a CW kernel rotation of R degrees, the required pre-rotation is
-    # (360 - R) degrees CW — which simplifies to R CW for R<=180 but to
-    # (360-R) CW for R>180 (e.g. 270° kernel needs 90° CW pre-rotation,
-    # same as 90° kernel, because 90+270=360).
+    # Counter-rotate for the raw framebuffer.
+    # PIL rotate() is CCW, but we need CW to compensate for the display
+    # rotation, so negate the angle.
     if rotation:
-        effective = rotation if rotation <= 180 else 360 - rotation
-        img = img.rotate(-effective, expand=True)
+        img = img.rotate(-rotation, expand=True)
 
     img.save(dest_path, "PNG")
     print(f"  Logo: {img.size[0]}x{img.size[1]}px (rotation={rotation}) -> {dest_path}")

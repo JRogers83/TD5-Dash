@@ -333,11 +333,15 @@ plymouth-set-default-theme -R "$THEME_NAME"
 # The -R flag rebuilds /boot/initrd.img-* but doesn't always copy it to
 # the firmware partition.  The Pi boots from /boot/firmware/, so we must
 # ensure the firmware copy is up to date.
-INITRD="/boot/initrd.img-$(uname -r)"
+# Use the most recently modified rpi-2712 initramfs rather than relying on
+# uname -r matching the exact filename (avoids stale-copy on kernel updates).
 FIRMWARE_INITRD="/boot/firmware/initramfs_2712"
-if [ -f "$INITRD" ] && [ -f "$FIRMWARE_INITRD" ]; then
+INITRD=$(ls -t /boot/initrd.img-*rpi-2712* 2>/dev/null | head -1)
+if [ -n "$INITRD" ] && [ -f "$INITRD" ]; then
     cp "$INITRD" "$FIRMWARE_INITRD"
-    echo "  Copied initramfs to firmware partition."
+    echo "  Copied $(basename "$INITRD") to firmware partition."
+else
+    echo "  WARNING: No rpi-2712 initramfs found — firmware copy skipped."
 fi
 echo "  Plymouth theme '$THEME_NAME' installed."
 
