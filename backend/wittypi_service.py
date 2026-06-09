@@ -6,9 +6,16 @@ Handles startup logging and VIN voltage monitoring when WITTYPI_ENABLED=1.
 Shutdown mechanism:
   monitor_vin() polls I2C registers 5+6 (VIN voltage in mV) every second.
   When VIN drops below WITTYPI_VIN_SHUTDOWN_THRESHOLD_MV for
-  WITTYPI_VIN_DEBOUNCE_COUNT consecutive readings, it calls `shutdown -h now`.
-  systemd then sends SIGTERM to this service, triggering the lifespan teardown
-  in main.py (_wittypi_pre_shutdown_cleanup) which handles game mode and DB.
+  WITTYPI_VIN_DEBOUNCE_COUNT consecutive readings it writes I2C register 71 = 1
+  (ADMIN_TURN_RPI_OFF).  wp5d detects this within 1 s, runs its internal
+  "clearing and shutdown" sequence — which sets up the "Vin > Vrec" restart
+  trigger — then calls `shutdown -h now` itself.  systemd sends SIGTERM to this
+  service, triggering the lifespan teardown in main.py
+  (_wittypi_pre_shutdown_cleanup) which handles game mode and DB.
+
+  If wp5d does not respond within 10 s (e.g. daemon not running), monitor_vin()
+  falls back to calling shutdown directly.  In that case the VIN recovery restart
+  will not be set up, but the Pi still shuts down cleanly.
 
   This covers the relay-switching use case (VIN drops instantly to 0V on
   ignition off) which the Witty Pi's built-in threshold detection cannot
@@ -28,8 +35,18 @@ I2C addresses (no conflict):
 I2C registers used:
   5  — VIN voltage MSB (mV)
   6  — VIN voltage LSB (mV)  combined: (reg5 << 8) | reg6
-  71 — Shutdown handshake: 0=none, 1=wp5d requests off, 2=Pi shutting down, 3=rebooting
-       Written to 2 by _signal_pi_shutting_down() in the VIN monitoring path.
+  71 — Shutdown handshake:
+         0 = none
+         1 = ADMIN_TURN_RPI_OFF   — Pi writes this to ask wp5d to initiate shutdown.
+                                    wp5d sees it, clears the register, runs its
+                                    "clearing and shutdown" sequence (which sets up the
+                                    VIN recovery restart trigger), then calls shutdown.
+         2 = ADMIN_RPI_POWERING_OFF — wp5d_poweroff.service writes this when systemd
+                                    is already tearing down.  Writing 2 directly from
+                                    application code bypasses wp5d's state machine and
+                                    prevents the VIN recovery restart from being set up.
+         3 = ADMIN_RPI_REBOOTING
+       _request_wp5d_shutdown() writes 1 so wp5d owns the shutdown sequence.
 
 Daemon:  wp5d
 Log:     /var/log/wp5d.log
@@ -72,29 +89,42 @@ def startup_checks() -> None:
         )
 
 
-def _signal_pi_shutting_down() -> None:
-    """Write I2C register 71 = 2 to signal the Witty Pi that the Pi is shutting down.
+def _request_wp5d_shutdown() -> bool:
+    """Write I2C register 71 = 1 to ask wp5d to initiate a clean shutdown.
 
-    Tells the Witty Pi this is an externally-triggered (VIN-loss) shutdown so it
-    will boot the Pi again when VIN recovers above the recovery threshold.
-    Called in the VIN monitoring shutdown path only — not in the SIGTERM/lifespan
-    path, which is a normal OS shutdown and does not need this signal.
+    wp5d polls register 71 every second. When it sees 1 (ADMIN_TURN_RPI_OFF) it:
+      1. Clears the register back to 0
+      2. Logs the shutdown reason (links shutdown to VIN state for recovery tracking)
+      3. Calls sudo shutdown -h now itself
+
+    This is the correct pathway for VIN-loss shutdown. wp5d's "clearing" step is
+    what sets up the "Vin > Vrec" restart trigger so the Pi reboots when ignition
+    returns. Writing 2 directly (ADMIN_RPI_POWERING_OFF) bypasses this sequence.
+
+    Returns True if the write succeeded, False otherwise (wp5d absent / I2C error).
+    Caller should fall back to calling shutdown directly if this returns False.
     """
     try:
         import smbus2
         bus = smbus2.SMBus(1)
         try:
-            bus.write_byte_data(_WITTYPI_ADDR, 71, 2)
+            bus.write_byte_data(_WITTYPI_ADDR, 71, 1)
         finally:
             bus.close()
-        log.info("Witty Pi I2C register 71 set to 2 (Pi is shutting down).")
+        log.info(
+            "Witty Pi I2C register 71 set to 1 — wp5d will initiate shutdown "
+            "and set up VIN recovery restart."
+        )
+        return True
     except ImportError:
-        log.debug("smbus2 not available — skipping register 71 write.")
+        log.debug("smbus2 not available — skipping wp5d shutdown request.")
+        return False
     except Exception as exc:
         log.warning(
-            "Could not write Witty Pi I2C register 71: %s — proceeding with shutdown anyway.",
+            "Could not write Witty Pi I2C register 71: %s — will call shutdown directly.",
             exc,
         )
+        return False
 
 
 def _read_vin_mv() -> int | None:
@@ -161,10 +191,22 @@ async def monitor_vin() -> None:
                     "initiating graceful shutdown.",
                     VIN_SHUTDOWN_THRESHOLD_MV, VIN_DEBOUNCE_COUNT,
                 )
-                # Signal to Witty Pi that Pi is shutting down (register 71 = 2).
-                # This lets the Witty Pi associate the shutdown with VIN loss and
-                # boot the Pi again when VIN recovers above the recovery threshold.
-                await asyncio.to_thread(_signal_pi_shutting_down)
+                # Ask wp5d to shut down by writing register 71 = 1.
+                # wp5d detects this within 1 s, runs its "clearing" sequence
+                # (which sets up the "Vin > Vrec" restart trigger), then calls
+                # shutdown itself.  We wait up to 10 s for that to happen.
+                # If wp5d is not running or the I2C write failed, we fall back
+                # to calling shutdown directly — no VIN recovery restart in
+                # that case, but at least the Pi still shuts down cleanly.
+                wp5d_notified = await asyncio.to_thread(_request_wp5d_shutdown)
+                if wp5d_notified:
+                    log.info("Waiting up to 10 s for wp5d to call shutdown …")
+                    await asyncio.sleep(10.0)
+                    # If we're still here, wp5d didn't respond — fall through.
+                    log.warning(
+                        "wp5d did not shut down within 10 s — calling shutdown directly "
+                        "(VIN recovery restart will not be set up)."
+                    )
                 subprocess.run(["sudo", "shutdown", "-h", "now"], check=False)
                 return  # task exits; SIGTERM → lifespan teardown handles cleanup
         else:
