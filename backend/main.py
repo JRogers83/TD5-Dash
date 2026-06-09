@@ -207,6 +207,8 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_discover_chromium_pid()),
         asyncio.create_task(_doom_startup_cleanup()),
     ]
+    if wittypi_service is not None:
+        tasks.append(asyncio.create_task(wittypi_service.monitor_vin()))
     yield
 
     # Witty Pi pre-shutdown cleanup: wp5d calls `shutdown -h now` on ignition off,
