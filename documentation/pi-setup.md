@@ -512,16 +512,9 @@ wget https://www.uugear.com/repo/WittyPi5/wp5_latest.deb && sudo apt install ./w
 
 This installs the `wp5d` daemon (log: `/var/log/wp5d.log`) and the `wp5` CLI tool.
 
-### Pre-shutdown Hook
+### Shutdown Mechanism
 
-> **hw-verify (script path):** The Witty Pi 5 stores lifecycle scripts on its emulated USB flash drive — **not** in `~/wittypi/` (that was the path for older Witty Pi 3/4 models). The `~/wittypi/beforeShutdown.sh` path previously documented here is incorrect for the Witty Pi 5.
->
-> Confirm the correct script directory and filename by consulting the wp5 manual with the physical device connected. Once confirmed, copy:
-> ```bash
-> cp ~/TD5-Dash/deploy/beforeShutdown.sh <correct-path-on-emulated-drive>
-> chmod +x <correct-path-on-emulated-drive>
-> ```
-> The script itself (`deploy/beforeShutdown.sh`) is correct — only its placement needs confirming.
+No shell script hook or I2C polling is needed. When wp5d detects VIN loss it calls `shutdown -h now`. systemd sends SIGTERM to the td5-dash service, which triggers the FastAPI lifespan teardown. Pre-shutdown cleanup (unfreeze Chromium if Doom is running, flush SQLite WAL) runs automatically at that point before the service exits.
 
 ### Configuration
 

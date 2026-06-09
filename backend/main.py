@@ -161,6 +161,32 @@ async def _doom_startup_cleanup() -> None:
     )
 
 
+async def _wittypi_pre_shutdown_cleanup() -> None:
+    """
+    Pre-shutdown cleanup triggered by SIGTERM when wp5d calls `shutdown -h now`.
+
+    Runs in the lifespan teardown BEFORE tasks are cancelled so game_service
+    state is still accessible. Equivalent to what /system/shutdown-prepare
+    used to do when called via beforeShutdown.sh — but driven by SIGTERM
+    rather than a shell script hook (which wp5d does not support).
+    """
+    import game_service as _gs
+    # Stop game mode if active (unfreezes Chromium, kills launcher, cleans PulseAudio)
+    try:
+        if _gs._launcher_proc is not None and _gs._launcher_proc.poll() is None:
+            await _gs._stop_internal()
+            log.info("Witty Pi shutdown: game mode stopped")
+    except Exception as exc:
+        log.warning("Witty Pi shutdown: game mode cleanup error: %s", exc)
+    # Flush SQLite WAL journal to main database file
+    try:
+        db.wal_checkpoint()
+        log.info("Witty Pi shutdown: WAL checkpoint complete")
+    except Exception as exc:
+        log.warning("Witty Pi shutdown: WAL checkpoint error: %s", exc)
+    log.info("Witty Pi initiated shutdown — pre-shutdown cleanup complete")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
@@ -182,6 +208,13 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_doom_startup_cleanup()),
     ]
     yield
+
+    # Witty Pi pre-shutdown cleanup: wp5d calls `shutdown -h now` on ignition off,
+    # systemd sends SIGTERM here, lifespan teardown runs this before task cancellation
+    # so game_service state is still accessible.
+    if wittypi_service is not None:
+        await _wittypi_pre_shutdown_cleanup()
+
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
@@ -518,10 +551,6 @@ async def system_shutdown() -> dict:
 
 # Game-mode router (before static catch-all).
 app.include_router(game_service.router)
-
-# Witty Pi router (registered only when WITTYPI_ENABLED=1)
-if wittypi_service is not None:
-    app.include_router(wittypi_service.router)
 
 # Static files mount last so /ws, /api/*, /spotify/*, /system/* are matched first.
 app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="static")

@@ -536,9 +536,8 @@ if [ "${_wp5_answer}" = "y" ] || [ "${_wp5_answer}" = "Y" ]; then
     apt-get install -y "$_wp5_deb"
     rm -f "$_wp5_deb"
     echo "  wp5 installed. Daemon: wp5d  Log: /var/log/wp5d.log"
-    echo "  Next: copy deploy/beforeShutdown.sh to the Witty Pi emulated USB"
-    echo "  flash drive (see documentation/pi-setup.md), then set"
-    echo "  WITTYPI_ENABLED=1 in .env and reboot."
+    echo "  Next: set WITTYPI_ENABLED=1 in .env and reboot."
+    echo "  See documentation/pi-setup.md — Witty Pi 5 Setup."
 else
     echo "  Skipped. See documentation/pi-setup.md — Witty Pi 5 Setup."
 fi
