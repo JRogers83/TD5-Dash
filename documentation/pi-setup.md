@@ -545,12 +545,16 @@ When wp5d triggers a shutdown, it sets register 71 = 1. The Pi should ideally re
 # Confirm I2C address 0x51 visible (no conflict with touchscreen at 0x38)
 i2cdetect -y 1
 
-# Test pre-shutdown cleanup endpoint manually
-curl -X POST http://localhost:8000/system/shutdown-prepare
-# Expected: {"ok": true, "cleaned_up": ["db_checkpointed", "shutdown_logged"]}
+# Confirm wp5d is running
+systemctl is-active wp5d
+
+# Verify pre-shutdown cleanup runs on ignition off by checking the journal after
+# a VIN-loss event (ignition cut):
+journalctl -u td5-dash | grep "pre-shutdown cleanup"
+# Expected: "pre-shutdown cleanup complete" logged as the service stops
 ```
 
-> **hw-verify remaining:** VIN threshold, shutdown delay, beforeShutdown.sh hook path on the emulated USB flash drive, and register-71 handshake behaviour all require the physical unit to confirm.
+> **hw-verify remaining:** VIN threshold, shutdown delay, and register-71 handshake behaviour all require the physical unit to confirm.
 
 ---
 

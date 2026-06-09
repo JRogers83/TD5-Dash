@@ -526,7 +526,8 @@ echo ""
 echo "▸ Witty Pi 5 HAT+ — install wp5 software?"
 echo "  This enables I2C and installs the wp5 .deb from uugear.com."
 echo "  Skip if the Witty Pi is not fitted or already installed."
-read -r -p "  Install Witty Pi 5 software? [y/N] " _wp5_answer
+read -r -p "  Install Witty Pi 5 software? [y/N] " _wp5_answer || true
+_wp5_answer="${_wp5_answer:-N}"
 if [ "${_wp5_answer}" = "y" ] || [ "${_wp5_answer}" = "Y" ]; then
     echo "▸ Enabling I2C..."
     raspi-config nonint do_i2c 0

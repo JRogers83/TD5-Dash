@@ -184,7 +184,7 @@ async def _wittypi_pre_shutdown_cleanup() -> None:
         log.info("Witty Pi shutdown: WAL checkpoint complete")
     except Exception as exc:
         log.warning("Witty Pi shutdown: WAL checkpoint error: %s", exc)
-    log.info("Witty Pi initiated shutdown — pre-shutdown cleanup complete")
+    log.info("Pre-shutdown cleanup complete (WITTYPI_ENABLED)")
 
 
 @asynccontextmanager
