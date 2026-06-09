@@ -60,14 +60,14 @@ def _parse_tpv(report) -> dict | None:
     speed: m/s from gpsd — converted to km/h here
     track: degrees true from north (heading)
     """
-    mode = int(getattr(report, 'mode', 0) or 0)
+    mode = int(report.get('mode', 0) or 0)
     if mode < 2:
         return None
     return {
-        "lat":         round(float(getattr(report, 'lat',   0.0) or 0.0), 6),
-        "lon":         round(float(getattr(report, 'lon',   0.0) or 0.0), 6),
-        "speed_kmh":   round(float(getattr(report, 'speed', 0.0) or 0.0) * 3.6, 1),
-        "heading_deg": round(float(getattr(report, 'track', 0.0) or 0.0), 1),
+        "lat":         round(float(report.get('lat',   0.0) or 0.0), 6),
+        "lon":         round(float(report.get('lon',   0.0) or 0.0), 6),
+        "speed_kmh":   round(float(report.get('speed', 0.0) or 0.0) * 3.6, 1),
+        "heading_deg": round(float(report.get('track', 0.0) or 0.0), 1),
         "fix":         mode,
     }
 
