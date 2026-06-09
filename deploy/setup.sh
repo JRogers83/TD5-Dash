@@ -522,25 +522,26 @@ if [[ "$_CF_ANSWER" =~ ^[Yy]$ ]]; then
 fi
 
 # ── Witty Pi 5 HAT+ ────────────────────────────────────────────────────────────
-# wp5 software must be installed MANUALLY after first boot (two commands).
-#
-# Step 1: Enable I2C and install the wp5 .deb package:
-#   sudo raspi-config nonint do_i2c 0
-#   wget https://www.uugear.com/repo/WittyPi5/wp5_latest.deb
-#   sudo apt install ./wp5_latest.deb
-#
-# Step 2: Configure the pre-shutdown hook.
-#   The wp5d daemon calls scripts from the Witty Pi's emulated USB flash drive —
-#   NOT from ~/wittypi/. See documentation/pi-setup.md for the correct path and
-#   how to copy deploy/beforeShutdown.sh to it.
-#
-# Step 3: Set WITTYPI_ENABLED=1 in .env and restart the service.
-#
-# Step 4: Configure VIN shutdown threshold using: wp5 (the CLI tool).
-#
-# Daemon:  wp5d   Log: /var/log/wp5d.log
-# See documentation/pi-setup.md — Witty Pi 5 Setup section for full details.
-echo "▸ Witty Pi 5: manual install required — see documentation/pi-setup.md"
+echo ""
+echo "▸ Witty Pi 5 HAT+ — install wp5 software?"
+echo "  This enables I2C and installs the wp5 .deb from uugear.com."
+echo "  Skip if the Witty Pi is not fitted or already installed."
+read -r -p "  Install Witty Pi 5 software? [y/N] " _wp5_answer
+if [ "${_wp5_answer}" = "y" ] || [ "${_wp5_answer}" = "Y" ]; then
+    echo "▸ Enabling I2C..."
+    raspi-config nonint do_i2c 0
+    echo "▸ Downloading and installing wp5 package..."
+    _wp5_deb="$(mktemp /tmp/wp5_XXXXXX.deb)"
+    wget -q -O "$_wp5_deb" https://www.uugear.com/repo/WittyPi5/wp5_latest.deb
+    apt-get install -y "$_wp5_deb"
+    rm -f "$_wp5_deb"
+    echo "  wp5 installed. Daemon: wp5d  Log: /var/log/wp5d.log"
+    echo "  Next: copy deploy/beforeShutdown.sh to the Witty Pi emulated USB"
+    echo "  flash drive (see documentation/pi-setup.md), then set"
+    echo "  WITTYPI_ENABLED=1 in .env and reboot."
+else
+    echo "  Skipped. See documentation/pi-setup.md — Witty Pi 5 Setup."
+fi
 
 # ── Done ───────────────────────────────────────────────────────────────────────
 echo ""
