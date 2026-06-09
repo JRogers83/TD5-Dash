@@ -1,7 +1,7 @@
 #!/bin/sh
 # Witty Pi 5 pre-shutdown hook.
 #
-# The UUGear Witty Pi daemon calls this script before asking the Pi to halt.
+# wp5d calls this script before asking the Pi to halt.
 # It gives the TD5 Dash backend up to 10 seconds to perform cleanup
 # (unfreeze Chromium, flush DB, log shutdown).
 #
@@ -9,11 +9,17 @@
 #   0  — proceed with shutdown
 #   1  — abort shutdown (e.g. override_mode is active in the backend)
 #
-# Installation: copy this file to ~/wittypi/beforeShutdown.sh after running
-# the UUGear install script. See documentation/pi-setup.md for details.
+# Installation:
+#   This script must be placed on the Witty Pi 5's emulated USB flash drive,
+#   NOT in ~/wittypi/ (that was the path for older Witty Pi models).
+#   The emulated drive is presented by the Witty Pi 5 hardware as a USB mass
+#   storage device. Mount it, copy this file to the scripts directory, and
+#   set it executable. Exact mount path and script directory — hw-verify with
+#   physical hardware and the wp5 manual.
 #
-# hw-verify: confirm hook is called by running `sudo shutdown -h now` with
-# Witty Pi installed and observing the journal for cleanup log messages.
+# wp5d daemon log: /var/log/wp5d.log
+# hw-verify: confirm this hook is invoked by wp5d and that the script path
+#            on the emulated USB flash drive is correct per the wp5 manual.
 
 result=$(curl -s -o /dev/null -w "%{http_code}" \
   -X POST http://localhost:8000/system/shutdown-prepare \

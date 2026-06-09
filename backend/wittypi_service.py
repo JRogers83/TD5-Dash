@@ -2,7 +2,7 @@
 Witty Pi 5 HAT+ power management service.
 
 Registers the /system/shutdown-prepare REST endpoint which is called by
-deploy/beforeShutdown.sh immediately before the Witty Pi daemon halts the Pi.
+deploy/beforeShutdown.sh immediately before wp5d halts the Pi.
 
 The endpoint performs ordered cleanup:
   1. Stop game mode if active (unfreezes Chromium)
@@ -13,14 +13,26 @@ Returns HTTP 409 if shared_state.override_mode is True — this signals
 beforeShutdown.sh to abort the shutdown (future "stay on" button hook).
 Returns HTTP 501 if WITTYPI_ENABLED != "1".
 
-I2C addresses:
-  Witty Pi 5 RTC: 0x51
-  Waveshare 7.9" touch (Goodix): 0x38
-  → No conflict.
+I2C addresses (confirmed from wp5 manual — no conflict):
+  Witty Pi 5 (RTC + power management): 0x51
+  Waveshare 7.9" touch (Goodix):        0x38
 
-# hw-verify: VIN shutdown threshold, shutdown delay, and beforeShutdown.sh
-# hook registration must be verified against the physical Witty Pi unit.
-# See documentation/pi-setup.md for setup instructions.
+I2C register 71 — shutdown handshake (values from wp5 manual):
+  0 = none
+  1 = Witty Pi requests Pi to turn off  (wp5d sets this)
+  2 = Pi is shutting down               (Pi should set this after cleanup)
+  3 = Pi is rebooting                   (Pi should set this on reboot)
+  # TODO (hw-verify): after cleanup, write register 71 = 2 via smbus2:
+  #   smbus2.SMBus(1).write_byte_data(0x51, 71, 2)
+  # Confirm wp5d behaviour with physical hardware before adding.
+
+Daemon:  wp5d
+Log:     /var/log/wp5d.log
+Install: sudo raspi-config nonint do_i2c 0
+         wget https://www.uugear.com/repo/WittyPi5/wp5_latest.deb && sudo apt install ./wp5_latest.deb
+
+# hw-verify: VIN threshold, beforeShutdown.sh hook path on emulated USB
+# flash drive, and register-71 handshake behaviour — all need physical unit.
 """
 from __future__ import annotations
 

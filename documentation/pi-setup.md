@@ -501,38 +501,63 @@ Place inline fuse (3A) on the supply to the relay.
 2. Connect Witty Pi VIN screw terminal to the relay switched output
 3. Connect the 5V buck converter output to Witty Pi USB-C
 
-### Software Installation (manual — requires internet + interactive confirmation)
+### Software Installation
+
+Enable I2C, then install the `wp5` package (two commands — no interactive script):
+
 ```bash
-curl -L https://install.ultronics.co.uk/wittypi5plus.sh | sudo bash
+sudo raspi-config nonint do_i2c 0
+wget https://www.uugear.com/repo/WittyPi5/wp5_latest.deb && sudo apt install ./wp5_latest.deb
 ```
+
+This installs the `wp5d` daemon (log: `/var/log/wp5d.log`) and the `wp5` CLI tool.
 
 ### Pre-shutdown Hook
-```bash
-cp ~/TD5-Dash/deploy/beforeShutdown.sh ~/wittypi/beforeShutdown.sh
-chmod +x ~/wittypi/beforeShutdown.sh
-```
+
+> **hw-verify (script path):** The Witty Pi 5 stores lifecycle scripts on its emulated USB flash drive — **not** in `~/wittypi/` (that was the path for older Witty Pi 3/4 models). The `~/wittypi/beforeShutdown.sh` path previously documented here is incorrect for the Witty Pi 5.
+>
+> Confirm the correct script directory and filename by consulting the wp5 manual with the physical device connected. Once confirmed, copy:
+> ```bash
+> cp ~/TD5-Dash/deploy/beforeShutdown.sh <correct-path-on-emulated-drive>
+> chmod +x <correct-path-on-emulated-drive>
+> ```
+> The script itself (`deploy/beforeShutdown.sh`) is correct — only its placement needs confirming.
 
 ### Configuration
+
 Set in `.env`:
 ```
 WITTYPI_ENABLED=1
 # IGNITION_SENSE_PIN=   ← leave empty when using Witty Pi
 ```
 
-Configure VIN shutdown threshold using the Witty Pi configuration tool to match the relay drop-out voltage on your specific relay.
+Configure VIN shutdown threshold using `wp5` to match the relay drop-out voltage on your specific relay.
+
+### Shutdown Handshake (I2C register 71)
+
+The Witty Pi 5 uses I2C register 71 at address 0x51 for shutdown signalling:
+
+| Value | Meaning |
+|-------|---------|
+| 0 | No action |
+| 1 | Witty Pi requests Pi to turn off |
+| 2 | Pi acknowledges: shutting down |
+| 3 | Pi acknowledges: rebooting |
+
+When wp5d triggers a shutdown, it sets register 71 = 1. The Pi should ideally respond with register 71 = 2 after cleanup. This acknowledgement write is not yet implemented in `wittypi_service.py` — see the TODO comment there for the required `smbus2` call. Verify behaviour with physical hardware first.
 
 ### Verify
-```bash
-# Confirm I2C addresses (no conflict with touchscreen at 0x38)
-i2cdetect -y 1
-# Should show 0x51 (Witty Pi RTC) and 0x38 (Waveshare touch)
 
-# Test pre-shutdown hook manually
+```bash
+# Confirm I2C address 0x51 visible (no conflict with touchscreen at 0x38)
+i2cdetect -y 1
+
+# Test pre-shutdown cleanup endpoint manually
 curl -X POST http://localhost:8000/system/shutdown-prepare
 # Expected: {"ok": true, "cleaned_up": ["db_checkpointed", "shutdown_logged"]}
 ```
 
-> **hw-verify:** VIN threshold, shutdown delay, and `beforeShutdown.sh` hook invocation must all be verified on real hardware. The hook path (`~/wittypi/beforeShutdown.sh`) may vary between UUGear firmware versions — confirm the correct path after running the install script.
+> **hw-verify remaining:** VIN threshold, shutdown delay, beforeShutdown.sh hook path on the emulated USB flash drive, and register-71 handshake behaviour all require the physical unit to confirm.
 
 ---
 

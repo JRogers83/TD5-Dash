@@ -522,22 +522,24 @@ if [[ "$_CF_ANSWER" =~ ^[Yy]$ ]]; then
 fi
 
 # ── Witty Pi 5 HAT+ ────────────────────────────────────────────────────────────
-# The UUGear install script must be run MANUALLY after first boot.
-# It downloads from the internet and requires interactive confirmation.
+# wp5 software must be installed MANUALLY after first boot (two commands).
 #
-# Step 1: Run the UUGear installer:
-#   curl -L https://install.ultronics.co.uk/wittypi5plus.sh | sudo bash
+# Step 1: Enable I2C and install the wp5 .deb package:
+#   sudo raspi-config nonint do_i2c 0
+#   wget https://www.uugear.com/repo/WittyPi5/wp5_latest.deb
+#   sudo apt install ./wp5_latest.deb
 #
-# Step 2: Copy the pre-shutdown hook to the Witty Pi scripts directory:
-#   cp "$REPO_DIR/deploy/beforeShutdown.sh" ~/wittypi/beforeShutdown.sh
-#   chmod +x ~/wittypi/beforeShutdown.sh
+# Step 2: Configure the pre-shutdown hook.
+#   The wp5d daemon calls scripts from the Witty Pi's emulated USB flash drive —
+#   NOT from ~/wittypi/. See documentation/pi-setup.md for the correct path and
+#   how to copy deploy/beforeShutdown.sh to it.
 #
 # Step 3: Set WITTYPI_ENABLED=1 in .env and restart the service.
 #
-# Step 4: Configure VIN shutdown threshold using the Witty Pi configuration tool.
+# Step 4: Configure VIN shutdown threshold using: wp5 (the CLI tool).
 #
+# Daemon:  wp5d   Log: /var/log/wp5d.log
 # See documentation/pi-setup.md — Witty Pi 5 Setup section for full details.
-# hw-verify: all Witty Pi behaviour requires physical hardware to test.
 echo "▸ Witty Pi 5: manual install required — see documentation/pi-setup.md"
 
 # ── Done ───────────────────────────────────────────────────────────────────────
