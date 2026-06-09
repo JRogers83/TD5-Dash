@@ -73,8 +73,14 @@ def _parse_tpv(report) -> dict | None:
 
 
 def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> None:
-    """Blocking gpsd poll loop — runs in a dedicated ThreadPoolExecutor thread."""
-    import gps as gpsd  # imported here so dev/Docker environments don't error on import
+    """Blocking gpsd poll loop — runs in a dedicated ThreadPoolExecutor thread.
+
+    Uses a direct socket connection with gpsd's JSON protocol rather than the
+    gps Python library, avoiding version-mismatch issues between the pip package
+    and the installed gpsd daemon.
+    """
+    import socket
+    import json as _json
 
     def _broadcast(data: dict) -> None:
         asyncio.run_coroutine_threadsafe(
@@ -86,33 +92,47 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
     while True:
         log.info("Connecting to gpsd at %s:%d …", GPSD_HOST, GPSD_PORT)
         try:
-            session = gpsd.gps(
-                host=GPSD_HOST,
-                port=GPSD_PORT,
-                mode=gpsd.WATCH_ENABLE | gpsd.WATCH_NEWSTYLE,
-            )
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(10.0)
+            sock.connect((GPSD_HOST, GPSD_PORT))
+            # Enable JSON streaming
+            sock.sendall(b'?WATCH={"enable":true,"json":true}\n')
             log.info("gpsd connected. Polling for GPS fix.")
             retry_delay = _RETRY_MIN_S
 
-            for report in session:
-                if report.get('class') != 'TPV':
-                    continue
+            buf = ""
+            while True:
+                chunk = sock.recv(4096).decode("utf-8", errors="replace")
+                if not chunk:
+                    raise OSError("gpsd closed connection")
+                buf += chunk
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        report = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+                    if report.get("class") != "TPV":
+                        continue
 
-                data = _parse_tpv(report)
-                if data is None:
-                    _broadcast({**_NO_FIX_DATA})
-                    shared_state.gps_lat         = None
-                    shared_state.gps_lon         = None
-                    shared_state.gps_speed_kmh   = None
-                    shared_state.gps_heading_deg = None
-                    shared_state.gps_fix         = 0
-                else:
-                    _broadcast(data)
-                    shared_state.gps_lat         = data["lat"]
-                    shared_state.gps_lon         = data["lon"]
-                    shared_state.gps_speed_kmh   = data["speed_kmh"]
-                    shared_state.gps_heading_deg = data["heading_deg"]
-                    shared_state.gps_fix         = data["fix"]
+                    data = _parse_tpv(report)
+                    if data is None:
+                        _broadcast({**_NO_FIX_DATA})
+                        shared_state.gps_lat         = None
+                        shared_state.gps_lon         = None
+                        shared_state.gps_speed_kmh   = None
+                        shared_state.gps_heading_deg = None
+                        shared_state.gps_fix         = 0
+                    else:
+                        _broadcast(data)
+                        shared_state.gps_lat         = data["lat"]
+                        shared_state.gps_lon         = data["lon"]
+                        shared_state.gps_speed_kmh   = data["speed_kmh"]
+                        shared_state.gps_heading_deg = data["heading_deg"]
+                        shared_state.gps_fix         = data["fix"]
 
         except Exception:
             if retry_delay > _RETRY_MIN_S:
