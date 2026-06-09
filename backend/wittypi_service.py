@@ -29,6 +29,7 @@ I2C registers used:
   5  — VIN voltage MSB (mV)
   6  — VIN voltage LSB (mV)  combined: (reg5 << 8) | reg6
   71 — Shutdown handshake: 0=none, 1=wp5d requests off, 2=Pi shutting down, 3=rebooting
+       Written to 2 by _signal_pi_shutting_down() in the VIN monitoring path.
 
 Daemon:  wp5d
 Log:     /var/log/wp5d.log
@@ -68,6 +69,31 @@ def startup_checks() -> None:
             "Both WITTYPI_ENABLED=1 and IGNITION_SENSE_PIN are set. "
             "Both shutdown paths are active simultaneously — this may cause races. "
             "Clear IGNITION_SENSE_PIN when using the Witty Pi."
+        )
+
+
+def _signal_pi_shutting_down() -> None:
+    """Write I2C register 71 = 2 to signal the Witty Pi that the Pi is shutting down.
+
+    Tells the Witty Pi this is an externally-triggered (VIN-loss) shutdown so it
+    will boot the Pi again when VIN recovers above the recovery threshold.
+    Called in the VIN monitoring shutdown path only — not in the SIGTERM/lifespan
+    path, which is a normal OS shutdown and does not need this signal.
+    """
+    try:
+        import smbus2
+        bus = smbus2.SMBus(1)
+        try:
+            bus.write_byte_data(_WITTYPI_ADDR, 71, 2)
+        finally:
+            bus.close()
+        log.info("Witty Pi I2C register 71 set to 2 (Pi is shutting down).")
+    except ImportError:
+        log.debug("smbus2 not available — skipping register 71 write.")
+    except Exception as exc:
+        log.warning(
+            "Could not write Witty Pi I2C register 71: %s — proceeding with shutdown anyway.",
+            exc,
         )
 
 
@@ -135,6 +161,10 @@ async def monitor_vin() -> None:
                     "initiating graceful shutdown.",
                     VIN_SHUTDOWN_THRESHOLD_MV, VIN_DEBOUNCE_COUNT,
                 )
+                # Signal to Witty Pi that Pi is shutting down (register 71 = 2).
+                # This lets the Witty Pi associate the shutdown with VIN loss and
+                # boot the Pi again when VIN recovers above the recovery threshold.
+                await asyncio.to_thread(_signal_pi_shutting_down)
                 subprocess.run(["sudo", "shutdown", "-h", "now"], check=False)
                 return  # task exits; SIGTERM → lifespan teardown handles cleanup
         else:
