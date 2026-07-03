@@ -22,27 +22,56 @@ matter how many commits separate A and E.
 Additionally, keep a short rollback history (up to 5 steps) rather than a single
 slot, since the marginal implementation cost is small once the data is persisted in
 the database anyway. Hitting Update again after a rollback resumes the normal
-forward flow (pulls latest, and the version just rolled back from becomes rollback
-history if you update forward and then want to reverse that too).
+forward flow: it pushes whatever commit is currently checked out (i.e. A, the
+commit just rolled back to) onto the history, then pulls forward again — so a
+second Roll Back would return to A once more, not to E.
+
+No "redo" / forward stack — out of scope, not requested.
 
 ## Data model
 
-New settings key, `update_history`, stored as a JSON array in the existing
-key/value settings table (`db.py`). It acts as a stack of up to 5 previous commit
-hashes, oldest dropped once the array exceeds 5 entries.
+New settings key, `update_history`, stored as a JSON array of full 40-character
+commit hashes in the existing key/value settings table (`db.py`). Hashes are
+shortened (`hash[:7]`) only at display time (the `/system/version` response and
+any status text) — the stored value is always the full hash so `git reset --hard`
+is unambiguous. It acts as a stack of up to 5 entries, oldest dropped once the
+array exceeds 5.
 
-- **On `POST /system/update`:** before `git pull`, capture `git rev-parse HEAD` and
-  append it to `update_history` (trim to the last 5 entries), persist to the
-  settings DB. Then proceed with the existing pull / pip install / apt-get /
-  restart flow, unchanged.
+- **On `POST /system/update`:** capture `old = git rev-parse HEAD`, run `git pull`,
+  then capture `new = git rev-parse HEAD`. Only append `old` to `update_history`
+  (trim to the last 5 entries) **if `new != old`** — i.e. the pull actually moved
+  HEAD. A no-op pull (already up to date) or a failed pull must not push a phantom
+  entry, since a stack of identical hashes would make Roll Back silently do
+  nothing. The write to `update_history` and the `git pull` are treated as one
+  transaction: skip the DB write entirely unless the pull both succeeded and
+  changed HEAD.
 - **On `POST /system/rollback`:** pop the last entry off `update_history`. If the
   array is empty, return `400 {"error": "no_previous_version"}`. Otherwise:
   `git reset --hard <hash>` (not a detached-HEAD checkout — the branch pointer
-  moves back so a subsequent `git pull` fast-forwards normally), then run the same
-  pip install / apt-get / clear-cache / delayed-restart steps `/system/update`
-  already runs (an older commit may need older dependencies, not just newer ones).
+  moves back so a subsequent `git pull` fast-forwards normally, **assuming
+  upstream history is never rebased/force-pushed** — a reasonable assumption for
+  this repo's single-maintainer workflow, but worth noting since a force-push
+  would break the fast-forward), then run the same pip install / apt-get /
+  clear-cache / delayed-restart steps `/system/update` already runs.
 
-No "redo" / forward stack — out of scope, not requested.
+**Assumption — clean working tree:** `git reset --hard` discards any uncommitted
+changes to tracked files. The only runtime-written file is the SQLite settings DB
+(`data/td5dash.db`), which is already `.gitignore`d and therefore untracked —
+`reset --hard` does not touch it. No other tracked file is written to at runtime.
+This design assumes that remains true; if a future change starts writing to a
+tracked file on the Pi, that file must either be added to `.gitignore` or excluded
+from rollback's blast radius explicitly.
+
+**Known limitation — unpinned dependencies:** `backend/requirements.txt` pins
+minimum versions only (`>=`), not exact versions. `pip install -r requirements.txt`
+after a rollback will happily leave newer, already-installed package versions in
+place if they still satisfy the `>=` constraint — it only reinstalls to satisfy
+the constraint, it does not downgrade to match what the older commit was
+originally tested against. This means rollback reliably reverts *code* but does
+not guarantee dependency versions match what shipped with that commit. Full
+correctness would require pinning exact versions (`==`) or committing a lockfile,
+which is a larger change out of scope here — noting it as a known gap rather than
+fixing it in this pass.
 
 ## New/changed endpoints
 
@@ -53,9 +82,13 @@ No "redo" / forward stack — out of scope, not requested.
   `{"ok": true, "output": ..., "restarting": true}` on success,
   `400 {"error": "no_previous_version"}` when history is empty.
 - `GET /system/version` — new. Returns current short commit hash + subject line
-  (`git log -1 --format="%h %s"`) and `rollback_available` (length of
-  `update_history`). Used by the frontend to render button state and label without
-  requiring an update/rollback to have just happened.
+  (`git log -1 --format="%h %s"`), `rollback_available` (length of
+  `update_history`), and `rollback_target` — the short hash + subject line of the
+  top of the `update_history` stack (`null` when the stack is empty). The frontend
+  needs `rollback_target` to render the "Roll Back to \<hash\>" label on page load,
+  before any update/rollback has happened in the current session — `
+  rollback_available` alone (a bare count) can't supply the hash the button label
+  requires.
 
 ## Frontend (Settings → Software section)
 
@@ -82,6 +115,11 @@ No "redo" / forward stack — out of scope, not requested.
 
 - Unit test `update_history` push/trim logic (cap at 5, FIFO eviction) in isolation
   from git/subprocess calls.
+- Unit test the no-op/failed-pull dedup guard: given `old == new` (or a failed
+  pull), `update_history` must be unchanged after `/system/update`.
+- Unit/integration test `POST /system/rollback` against an empty `update_history`
+  returns `400 {"error": "no_previous_version"}` and does not touch git or restart
+  the service.
 - Manual verification on a dev checkout: perform a few no-op commits, call
   `/system/update` and `/system/rollback` in sequence via curl, confirm `git log`
   matches expectations at each step (cannot fully verify restart-via-systemd
