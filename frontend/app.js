@@ -850,6 +850,7 @@ function toggleRelay(name) {
   _applyBrightUI(_loadBrightPrefs());
   _relayState['amp'] = _loadRelayState('amp');
   _applyRelayUI('amp');
+  refreshVersionInfo();
 }());
 
 // ── OTA update ─────────────────────────────────
@@ -881,6 +882,73 @@ async function triggerUpdate() {
     btn.disabled    = false;
     lbl.textContent = 'Check for Updates';
     // Leave status text visible so user can see what changed
+    refreshVersionInfo();  // update just moved HEAD — refresh the rollback target
+  };
+  document.addEventListener('td5-ws-connected', _resetBtn, { once: true });
+  // Fallback: reset after 30 s if reconnect event never fires
+  setTimeout(_resetBtn, 30_000);
+}
+
+// ── OTA rollback ───────────────────────────────
+function _setRollbackButton(target) {
+  const btn = document.getElementById('btn-rollback');
+  const lbl = document.getElementById('lbl-rollback');
+  if (target) {
+    btn.disabled    = false;
+    lbl.textContent = `Roll Back to ${target}`;
+  } else {
+    btn.disabled    = true;
+    lbl.textContent = 'Roll Back';
+  }
+}
+
+async function refreshVersionInfo() {
+  try {
+    const r    = await fetch('/system/version');
+    const data = await r.json();
+    _setRollbackButton(data.rollback_target);
+  } catch (_) {
+    // Backend not reachable yet (e.g. mid-restart) — leave button as-is.
+  }
+}
+
+async function triggerRollback() {
+  const btn    = document.getElementById('btn-rollback');
+  const lbl    = document.getElementById('lbl-rollback');
+  const status = document.getElementById('update-status');
+
+  btn.disabled = true;
+  lbl.textContent = 'Rolling back…';
+  status.textContent = '';
+  status.className = 'update-status';
+
+  try {
+    const r    = await fetch('/system/rollback', { method: 'POST' });
+    const data = await r.json();
+
+    if (!r.ok) {
+      status.textContent = data.error === 'no_previous_version'
+        ? 'No previous version to roll back to.'
+        : (data.output || 'Rollback failed.');
+      status.className = 'update-status';
+      refreshVersionInfo();  // re-enable/disable based on actual server state
+      return;
+    }
+
+    lbl.textContent    = 'Restarting…';
+    status.textContent = data.output;
+    status.className   = 'update-status update-status--ok';
+  } catch (_) {
+    // Expected — service restarted before response completed
+    lbl.textContent    = 'Restarting…';
+    status.textContent = 'Reconnecting…';
+    status.className   = 'update-status update-status--ok';
+  }
+
+  // Re-enable once the WS reconnects (service is back up)
+  const _resetBtn = () => {
+    btn.disabled = false;
+    refreshVersionInfo();
   };
   document.addEventListener('td5-ws-connected', _resetBtn, { once: true });
   // Fallback: reset after 30 s if reconnect event never fires
