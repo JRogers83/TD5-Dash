@@ -75,20 +75,30 @@ fixing it in this pass.
 
 ## New/changed endpoints
 
-- `POST /system/update` — unchanged behavior, plus pushes current HEAD onto
-  `update_history` before pulling.
+- `POST /system/update` — captures HEAD before pulling, and appends it to
+  `update_history` after a successful pull that moved HEAD (see Data model —
+  `old`/`new` capture and `new != old` guard; a no-op or failed pull writes
+  nothing).
 - `POST /system/rollback` — new. Pops `update_history`, resets, reinstalls deps,
   restarts. Mirrors `/system/update`'s response shape:
   `{"ok": true, "output": ..., "restarting": true}` on success,
   `400 {"error": "no_previous_version"}` when history is empty.
-- `GET /system/version` — new. Returns current short commit hash + subject line
-  (`git log -1 --format="%h %s"`), `rollback_available` (length of
-  `update_history`), and `rollback_target` — the short hash + subject line of the
-  top of the `update_history` stack (`null` when the stack is empty). The frontend
-  needs `rollback_target` to render the "Roll Back to \<hash\>" label on page load,
-  before any update/rollback has happened in the current session — `
-  rollback_available` alone (a bare count) can't supply the hash the button label
-  requires.
+- `GET /system/version` — new. Returns:
+  - `current_version` — current short commit hash + subject line
+    (`git log -1 --format="%h %s"`)
+  - `rollback_available` — length of `update_history`
+  - `rollback_target` — short hash + subject line of the top of the
+    `update_history` stack (`null` when the stack is empty)
+
+  The frontend needs `rollback_target` to render the "Roll Back to \<hash\>" label
+  on page load, before any update/rollback has happened in the current session —
+  `rollback_available` alone (a bare count) can't supply the hash the button label
+  requires. Subject-line lookup (`git log -1 --format="%h %s" <hash>`) is expected
+  to always succeed since stored hashes are branch ancestors and stay reachable,
+  but since this endpoint drives button rendering on every page load, if the
+  subject lookup fails for any reason, fall back to showing the hash alone
+  (`git log -1 --format="%h" <hash>` or the stored hash directly) rather than
+  erroring the whole endpoint.
 
 ## Frontend (Settings → Software section)
 
