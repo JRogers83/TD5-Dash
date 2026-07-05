@@ -146,6 +146,8 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 | `POST` | `/system/relay` | Control a relay — `{"name": "amp", "state": bool}` (GPIO pending CarPiHAT) |
 | `POST` | `/system/update` | OTA update — git pull + pip install + restart |
 | `POST` | `/system/restart` | Restart service only (no code pull) |
+| `POST` | `/system/rollback` | Roll back to the previous version — undoes the most recent `/system/update` |
+| `GET` | `/system/version` | Current commit + rollback availability, for the Settings UI |
 
 ---
 

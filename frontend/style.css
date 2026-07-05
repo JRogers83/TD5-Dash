@@ -450,6 +450,11 @@ html, body {
   transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
 
+.relay-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 .relay-btn--on {
   background: color-mix(in srgb, var(--c-green) 15%, transparent);
   border-color: var(--c-green);

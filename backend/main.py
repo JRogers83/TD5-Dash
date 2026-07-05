@@ -10,6 +10,7 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -17,6 +18,7 @@ import db
 import game_service
 import spotify_service
 import system_service
+import update_service
 from ws_hub import ConnectionManager
 
 # Witty Pi power management — active when WITTYPI_ENABLED=1
@@ -95,8 +97,6 @@ else:
 
 manager  = ConnectionManager()
 FRONTEND = Path(__file__).parent.parent / "frontend"
-REPO_DIR = Path(__file__).parent.parent
-VENV_PIP = REPO_DIR / ".venv" / "bin" / "pip"
 
 def _clear_chromium_cache() -> None:
     """Remove Chromium's disk and config caches so the next launch loads fresh frontend files."""
@@ -480,48 +480,52 @@ async def _delayed_restart() -> None:
 
 
 @app.post("/system/update")
-async def system_update() -> dict:
+async def system_update():
     """
     Pull latest code from git, update Python dependencies, then restart.
 
-    Returns the git output so the frontend can display what changed.
+    Delegates git/subprocess orchestration to update_service.perform_update(),
+    which also records the pre-pull commit in the rollback history (see
+    db.push_update_history) so Roll Back can undo this update later.
+
     The service will restart ~1.5 s after this response is sent —
     callers should expect the connection to drop and handle it gracefully.
     """
-    # git pull — abort if it fails so we don't restart with stale code
-    git = subprocess.run(
-        ["git", "-C", str(REPO_DIR), "pull"],
-        capture_output=True, text=True,
-    )
-    git_out = git.stdout.strip() or git.stderr.strip() or "No output"
-    if git.returncode != 0:
-        raise HTTPException(500, {"error": "git_pull_failed", "output": git_out})
-
-    # pip install (handles requirements changes; quiet to keep output clean)
-    if VENV_PIP.exists():
-        subprocess.run(
-            [str(VENV_PIP), "install", "-q", "-r",
-             str(REPO_DIR / "backend" / "requirements.txt")],
-            capture_output=True,
-        )
-
-    # apt install game deps — idempotent; upgrades if newer packages are available.
-    # Failure is logged but does not abort the restart — a broken package manager
-    # should not prevent code updates from landing.
-    apt = subprocess.run(
-        ["sudo", "apt-get", "install", "-y",
-         "freedoom", "openbox", "libsamplerate0", "python3-evdev",
-         "fonts-noto-color-emoji"],
-        capture_output=True, text=True,
-    )
-    if apt.returncode != 0:
-        log.warning("OTA apt-get failed (rc=%d): %s", apt.returncode,
-                    (apt.stderr or apt.stdout).strip()[:200])
+    try:
+        result = update_service.perform_update()
+    except update_service.GitError as exc:
+        return JSONResponse(status_code=500, content={"error": "git_pull_failed", "output": str(exc)})
 
     _clear_chromium_cache()
     asyncio.create_task(_delayed_restart())
+    return result
 
-    return {"ok": True, "output": git_out, "restarting": True}
+
+@app.post("/system/rollback")
+async def system_rollback():
+    """
+    Roll back to the commit checked out immediately before the most recent
+    update (see update_service.perform_rollback and db.pop_update_history).
+
+    The service will restart ~1.5 s after this response is sent —
+    callers should expect the connection to drop and handle it gracefully.
+    """
+    try:
+        result = update_service.perform_rollback()
+    except update_service.NoPreviousVersionError:
+        return JSONResponse(status_code=400, content={"error": "no_previous_version"})
+    except update_service.GitError as exc:
+        return JSONResponse(status_code=500, content={"error": "git_reset_failed", "output": str(exc)})
+
+    _clear_chromium_cache()
+    asyncio.create_task(_delayed_restart())
+    return result
+
+
+@app.get("/system/version")
+async def system_version() -> dict:
+    """Current commit + rollback availability, for the Settings UI."""
+    return update_service.get_version_info()
 
 
 @app.post("/system/restart")
