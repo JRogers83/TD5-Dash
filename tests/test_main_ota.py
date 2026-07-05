@@ -28,4 +28,4 @@ def test_rollback_endpoint_returns_400_when_history_empty(monkeypatch):
     response = client.post("/system/rollback")
 
     assert response.status_code == 400
-    assert response.json() == {"detail": {"error": "no_previous_version"}}
+    assert response.json() == {"error": "no_previous_version"}

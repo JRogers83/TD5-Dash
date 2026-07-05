@@ -10,6 +10,7 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -479,7 +480,7 @@ async def _delayed_restart() -> None:
 
 
 @app.post("/system/update")
-async def system_update() -> dict:
+async def system_update():
     """
     Pull latest code from git, update Python dependencies, then restart.
 
@@ -493,7 +494,7 @@ async def system_update() -> dict:
     try:
         result = update_service.perform_update()
     except update_service.GitError as exc:
-        raise HTTPException(500, {"error": "git_pull_failed", "output": str(exc)})
+        return JSONResponse(status_code=500, content={"error": "git_pull_failed", "output": str(exc)})
 
     _clear_chromium_cache()
     asyncio.create_task(_delayed_restart())
@@ -501,7 +502,7 @@ async def system_update() -> dict:
 
 
 @app.post("/system/rollback")
-async def system_rollback() -> dict:
+async def system_rollback():
     """
     Roll back to the commit checked out immediately before the most recent
     update (see update_service.perform_rollback and db.pop_update_history).
@@ -512,9 +513,9 @@ async def system_rollback() -> dict:
     try:
         result = update_service.perform_rollback()
     except update_service.NoPreviousVersionError:
-        raise HTTPException(400, {"error": "no_previous_version"})
+        return JSONResponse(status_code=400, content={"error": "no_previous_version"})
     except update_service.GitError as exc:
-        raise HTTPException(500, {"error": "git_reset_failed", "output": str(exc)})
+        return JSONResponse(status_code=500, content={"error": "git_reset_failed", "output": str(exc)})
 
     _clear_chromium_cache()
     asyncio.create_task(_delayed_restart())
