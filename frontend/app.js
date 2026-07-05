@@ -895,7 +895,7 @@ function _setRollbackButton(target) {
   const lbl = document.getElementById('lbl-rollback');
   if (target) {
     btn.disabled    = false;
-    lbl.textContent = `Roll Back to ${target}`;
+    lbl.textContent = `Roll Back to ${target.split(' ')[0]}`;
   } else {
     btn.disabled    = true;
     lbl.textContent = 'Roll Back';

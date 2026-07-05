@@ -104,13 +104,14 @@ def test_perform_update_raises_and_skips_history_on_pull_failure(monkeypatch):
 # ── perform_rollback ─────────────────────────────────────────────────────────
 
 def test_perform_rollback_raises_when_history_empty(monkeypatch):
-    monkeypatch.setattr(svc.db, "pop_update_history", MagicMock(return_value=None))
+    monkeypatch.setattr(svc.db, "get_update_history", MagicMock(return_value=[]))
     with pytest.raises(svc.NoPreviousVersionError):
         svc.perform_rollback()
 
 
 def test_perform_rollback_resets_to_popped_hash(monkeypatch):
-    monkeypatch.setattr(svc.db, "pop_update_history", MagicMock(return_value="old_hash"))
+    monkeypatch.setattr(svc.db, "get_update_history", MagicMock(return_value=["old_hash"]))
+    monkeypatch.setattr(svc.db, "pop_update_history", MagicMock())
     monkeypatch.setattr(svc, "reinstall_deps", MagicMock())
 
     def fake_run(*args, **kwargs):
@@ -124,7 +125,24 @@ def test_perform_rollback_resets_to_popped_hash(monkeypatch):
         result = svc.perform_rollback()
 
     assert result == {"ok": True, "output": "HEAD is now at old_hash", "restarting": True}
+    svc.db.pop_update_history.assert_called_once()
     svc.reinstall_deps.assert_called_once()
+
+
+def test_perform_rollback_preserves_history_on_reset_failure(monkeypatch):
+    monkeypatch.setattr(svc.db, "get_update_history", MagicMock(return_value=["old_hash"]))
+    monkeypatch.setattr(svc.db, "pop_update_history", MagicMock())
+    monkeypatch.setattr(svc, "reinstall_deps", MagicMock())
+
+    def fake_run(*args, **kwargs):
+        return _git_result(returncode=1, stderr="fatal: could not reset")
+
+    with patch.object(svc.subprocess, "run", side_effect=fake_run):
+        with pytest.raises(svc.GitError):
+            svc.perform_rollback()
+
+    svc.db.pop_update_history.assert_not_called()
+    svc.reinstall_deps.assert_not_called()
 
 
 # ── get_version_info ─────────────────────────────────────────────────────────
@@ -140,6 +158,16 @@ def test_get_version_info_no_history():
         "rollback_available": 0,
         "rollback_target": None,
     }
+
+
+def test_get_version_info_falls_back_when_capture_head_raises():
+    with patch.object(svc.db, "get_update_history", return_value=[]), \
+         patch.object(svc, "capture_head", side_effect=svc.GitError("fatal: not a git repo")):
+        info = svc.get_version_info()
+
+    assert info["current_version"] == "unknown"
+    assert info["rollback_available"] == 0
+    assert info["rollback_target"] is None
 
 
 def test_get_version_info_with_history():

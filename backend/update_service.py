@@ -118,21 +118,35 @@ def perform_rollback() -> dict:
     Roll back to the most recent entry in the update_history rollback stack.
 
     Raises NoPreviousVersionError if there is nothing to roll back to, or
-    GitError if `git reset --hard` fails.
+    GitError if `git reset --hard` fails. The history entry is only removed
+    from the stack after a successful reset, so a failed reset leaves the
+    rollback target intact for a retry.
     """
-    target = db.pop_update_history()
-    if target is None:
+    history = db.get_update_history()
+    if not history:
         raise NoPreviousVersionError()
+    target = history[-1]
     output = _run_git("reset", "--hard", target)
+    db.pop_update_history()
     reinstall_deps()
     return {"ok": True, "output": output, "restarting": True}
 
 
 def get_version_info() -> dict:
-    """Current commit + rollback availability, for the Settings UI."""
+    """Current commit + rollback availability, for the Settings UI.
+
+    Must never raise — this drives button rendering on every page load. If
+    even `git rev-parse HEAD` fails, current_version falls back to a safe
+    placeholder; rollback_available/rollback_target are independent of
+    capture_head() and are unaffected.
+    """
     history = db.get_update_history()
+    try:
+        current_version = describe_commit(capture_head())
+    except GitError:
+        current_version = "unknown"
     return {
-        "current_version": describe_commit(capture_head()),
+        "current_version": current_version,
         "rollback_available": len(history),
         "rollback_target": describe_commit(history[-1]) if history else None,
     }
