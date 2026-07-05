@@ -265,11 +265,19 @@ function handleSpotify(d) {
 
   if (!d.connected) {
     clearInterval(_spTick);
-    document.getElementById('sp-disc-title').textContent =
-      d.error ? 'Spotify Unavailable' : 'No Active Device';
-    document.getElementById('sp-disc-sub').textContent =
-      d.error ? 'Check credentials or network connection'
-              : 'Open Spotify on any device to begin';
+    let title, sub;
+    if (d.auth_required) {
+      title = 'Spotify Sign-In Required';
+      sub   = 'Refresh token expired — re-authorize on the Pi';
+    } else if (d.error) {
+      title = 'Spotify Unavailable';
+      sub   = 'Check credentials or network connection';
+    } else {
+      title = 'No Active Device';
+      sub   = 'Open Spotify on any device to begin';
+    }
+    document.getElementById('sp-disc-title').textContent = title;
+    document.getElementById('sp-disc-sub').textContent   = sub;
     disconnected.style.display = '';
     player.style.display = 'none';
     return;

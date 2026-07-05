@@ -130,8 +130,9 @@ def main() -> None:
         sys.exit(1)
 
     print("\n" + "=" * 60)
-    print("SUCCESS — add this to deploy/td5-dash.service:")
+    print("SUCCESS — set this in the .env file the service reads:")
     print(f"\n  SPOTIFY_REFRESH_TOKEN={refresh_token}\n")
+    print("then restart the service. See documentation/SPOTIFY-REAUTH.md.")
     print("=" * 60)
 
 

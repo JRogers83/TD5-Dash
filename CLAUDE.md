@@ -114,7 +114,7 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 ```json
 {"type": "engine",   "data": {"rpm": 0, "coolant_temp_c": 0, "boost_bar": 0, "throttle_pct": 0, "throttle_raw_pct": 0, "battery_v": 0, "inlet_air_temp_c": 0, "external_temp_c": 0, "fuel_temp_c": 0, "road_speed_kph": 0, "fault_codes": [{"code": "4-6", "description": "Ambient air temperature circuit (L)", "count": 187, "expected": true}]}}
 {"type": "victron",  "data": {"soc_pct": 0, "voltage_v": 0, "current_a": 0, "solar_yield_wh": 0, "charge_state": "", "orion_state": "", "orion_input_v": 0}}
-{"type": "spotify",  "data": {"connected": false, "playing": false, "error": false, "track": "", "artist": "", "album": "", "album_art_url": null, "progress_s": 0, "duration_s": 0, "device_name": "", "track_id": "", "liked": false}}
+{"type": "spotify",  "data": {"connected": false, "playing": false, "error": false, "auth_required": false, "track": "", "artist": "", "album": "", "album_art_url": null, "progress_s": 0, "duration_s": 0, "device_name": "", "track_id": "", "liked": false}}
 {"type": "weather",  "data": {"current": {"temp_c": 0, "humidity_pct": 0, "weather_code": 0, "wind_kph": 0}, "forecast": [], "location": "", "stale": false}}
 {"type": "starlink", "data": {"state": "offline", "down_mbps": 0, "up_mbps": 0, "latency_ms": 0, "ping_drop_pct": 0, "obstructed": false, "obstruction_pct": 0, "roaming": false, "uptime_s": 0, "alerts": []}}
 {"type": "gps",      "data": {"lat": 0, "lon": 0, "alt": 0}}
@@ -240,7 +240,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 - Controlled by `VICTRON_MOCK`; configured via `VICTRON_SHUNT_MAC/KEY`, `VICTRON_MPPT_MAC/KEY`, `VICTRON_ORION_MAC/KEY`
 
 **Spotify — `backend/spotify_service.py` + `backend/spotify_auth.py`**
-- `spotify_auth.py` — OAuth2 client-credentials refresh flow; token cached in memory, refreshed on expiry
+- `spotify_auth.py` — OAuth2 **Authorization Code** refresh flow (a *user* token with playback/library scopes — NOT client-credentials); access token cached in memory, refreshed on expiry. Refresh token is reconciled env-vs-DB and rotated tokens are persisted to the settings DB. ⚠ Spotify's June 2026 policy expires user refresh tokens 6 months after the original authorization (refreshing does not reset the timer) — on `invalid_grant` the service sets `auth_required` and the UI shows "Spotify Sign-In Required"; recovery is manual re-auth (see `documentation/SPOTIFY-REAUTH.md`)
 - `spotify_service.py` — polls `/me/player` at 1 s (playing) or 5 s (idle); broadcasts track, artist, album, art URL, progress, liked status; liked status cached per-track (only calls API on track change)
 - **204 handling:** on "no active device" (HTTP 204), re-broadcasts last known payload with `playing: false` so the player stays visible rather than blanking. Falls back to `_DISCONNECTED` only before any track has been received
 - **`error` field:** `true` only on genuine auth/network failures (`_ERROR` payload); `false` on normal no-device state (`_DISCONNECTED`). Frontend uses this to show "Spotify Unavailable" vs "No Active Device"

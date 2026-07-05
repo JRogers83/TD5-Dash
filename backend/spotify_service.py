@@ -33,6 +33,7 @@ _DISCONNECTED: dict = {
     "connected":     False,
     "playing":       False,
     "error":         False,
+    "auth_required": False,
     "track":         "",
     "artist":        "",
     "album":         "",
@@ -47,6 +48,12 @@ _DISCONNECTED: dict = {
 # Broadcast on genuine auth / network failures — error flag lets the UI
 # show a different message from the normal "no active device" state.
 _ERROR: dict = {**_DISCONNECTED, "error": True}
+
+# Broadcast when the refresh token is expired/revoked (invalid_grant). The
+# auth_required flag lets the UI prompt the user to re-authorize rather than
+# showing a generic "check network" message — there is no in-vehicle browser,
+# so recovery is manual (re-run spotify_auth_setup.py + restart).
+_AUTH_REQUIRED: dict = {**_DISCONNECTED, "error": True, "auth_required": True}
 
 # Module-level state shared between broadcast_loop and save_track
 _like_hold_until: float = 0.0   # suppress liked overwrites until this timestamp
@@ -114,7 +121,10 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
         while True:
             token = await spotify_auth.get_token()
             if token is None:
-                await manager.broadcast({"type": "spotify", "data": _ERROR})
+                # Distinguish a dead refresh token (needs re-auth) from a
+                # transient network/credential failure.
+                payload = _AUTH_REQUIRED if spotify_auth.auth_required else _ERROR
+                await manager.broadcast({"type": "spotify", "data": payload})
                 await asyncio.sleep(_IDLE_INTERVAL)
                 continue
 
