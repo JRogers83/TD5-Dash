@@ -19,6 +19,7 @@ Created automatically on first run with sensible defaults.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sqlite3
@@ -218,6 +219,46 @@ def set_settings(updates: dict[str, str]) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+# ── Update history (OTA rollback) ───────────────────────────────────────────
+
+_UPDATE_HISTORY_KEY = "update_history"
+_UPDATE_HISTORY_MAX = 5
+
+
+def get_update_history() -> list[str]:
+    """Return the OTA rollback stack — full commit hashes, oldest first.
+
+    Empty list if no updates have been applied yet, or if the stored value is
+    corrupt (defensive — avoids a bad settings row bricking the update UI).
+    """
+    raw = get_setting(_UPDATE_HISTORY_KEY)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+def push_update_history(commit_hash: str) -> None:
+    """Push a commit hash onto the rollback stack, trimming to the last 5 entries."""
+    history = get_update_history()
+    history.append(commit_hash)
+    history = history[-_UPDATE_HISTORY_MAX:]
+    set_settings({_UPDATE_HISTORY_KEY: json.dumps(history)})
+
+
+def pop_update_history() -> Optional[str]:
+    """Pop and return the most recent rollback target, or None if the stack is empty."""
+    history = get_update_history()
+    if not history:
+        return None
+    commit_hash = history.pop()
+    set_settings({_UPDATE_HISTORY_KEY: json.dumps(history)})
+    return commit_hash
 
 
 # ── Pages helpers ────────────────────────────────────────────────────────────
