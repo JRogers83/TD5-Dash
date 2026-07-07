@@ -43,10 +43,15 @@ class NoPreviousVersionError(Exception):
 
 
 def _run_git(*args: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(REPO_DIR), *args],
-        capture_output=True, text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_DIR), *args],
+            capture_output=True, text=True,
+        )
+    except OSError as exc:
+        # e.g. git not installed / not on PATH — treat the same as any other
+        # git failure so every caller's existing GitError handling covers it.
+        raise GitError(f"git not available: {exc}") from exc
     output = result.stdout.strip() or result.stderr.strip() or "No output"
     if result.returncode != 0:
         raise GitError(output)

@@ -4,6 +4,13 @@ FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
+# git is required at runtime by backend/update_service.py (OTA update/rollback
+# shells out to it) — the Pi target always has it since it's how the repo gets
+# there in the first place, so install it here too to mirror that.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (better layer caching)
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
