@@ -24,8 +24,8 @@ const CLASSIC = {
   colorMajorTicks: '#ffffff',
   colorMinorTicks: '#666',
   colorNumbers:    '#ffffff',
-  colorUnits:      '#999',
-  colorTitle:      '#999',
+  colorUnits:      '#ffffff',
+  colorTitle:      '#ffffff',
 
   colorNeedle:               '#ffffff',
   colorNeedleEnd:            '#ffffff',

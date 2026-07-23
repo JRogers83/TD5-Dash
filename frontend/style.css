@@ -163,6 +163,12 @@ html, body {
   color: var(--text-muted);
 }
 
+/* Engine screen (layer 0) — muted grey labels were hard to read in sunlight;
+   scoped here rather than changing --text-muted globally. */
+.engine-content .stat-label {
+  color: var(--text);
+}
+
 .stat-value {
   font-size: 30px;
   font-weight: 600;
