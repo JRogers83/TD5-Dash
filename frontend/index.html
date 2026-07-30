@@ -420,6 +420,79 @@
 
           </div>
         </div>
+
+        <!-- Layer 1: GPS diagnostics -->
+        <div class="layer" data-layer="1">
+          <div class="gps-content">
+
+            <!-- Fix quality -->
+            <div class="gps-col">
+              <div class="stat-label">GPS Fix</div>
+              <div class="stat-tile">
+                <div class="stat-label">Status</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="gps-fix-txt">No Fix</div>
+                  <div class="status-dot" id="gps-fix-dot"></div>
+                </div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Satellites</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="gps-sats">—</div>
+                  <div class="status-dot" id="gps-sats-dot"></div>
+                </div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Accuracy · HDOP</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="gps-hdop">—</div>
+                  <div class="status-dot" id="gps-hdop-dot"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vdivider"></div>
+
+            <!-- Live position -->
+            <div class="gps-col">
+              <div class="stat-label">Position</div>
+              <div class="stat-grid">
+                <div class="stat-tile">
+                  <div class="stat-label">Latitude</div>
+                  <div class="stat-value" id="gps-lat">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Longitude</div>
+                  <div class="stat-value" id="gps-lon">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Speed</div>
+                  <div class="stat-value" id="gps-speed">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Heading</div>
+                  <div class="stat-value" id="gps-heading">—</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vdivider"></div>
+
+            <!-- Last known good -->
+            <div class="gps-col">
+              <div class="stat-label">Last Known Fix</div>
+              <div class="stat-tile">
+                <div class="stat-label">Position</div>
+                <div class="stat-value gps-lastfix" id="gps-last-pos">—</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Fix Time</div>
+                <div class="stat-value" id="gps-last-time">—</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
       </div>
 
       <!-- ── View 4 · Settings ──────────────────── -->
@@ -466,6 +539,13 @@
                   <div class="engine-stat-bottom">
                     <div class="stat-value" id="txt-starlink">—</div>
                     <div class="status-dot" id="dot-starlink"></div>
+                  </div>
+                </div>
+                <div class="stat-tile settings-conn-tile">
+                  <div class="stat-label">GPS</div>
+                  <div class="engine-stat-bottom">
+                    <div class="stat-value" id="txt-gps-conn">No Fix</div>
+                    <div class="status-dot" id="dot-gps-conn"></div>
                   </div>
                 </div>
               </div>

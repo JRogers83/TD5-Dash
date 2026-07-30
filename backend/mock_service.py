@@ -76,11 +76,14 @@ _MOCK: dict = {
         "location": "Norwich, UK",
     },
     "gps": {
-        "lat":         52.6309,
-        "lon":         1.2974,
-        "speed_kmh":   0.0,
-        "heading_deg": 0.0,
-        "fix":         3,
+        "lat":                52.6309,
+        "lon":                1.2974,
+        "speed_kmh":          0.0,
+        "heading_deg":        0.0,
+        "fix":                3,
+        "satellites_used":    9,
+        "satellites_visible": 12,
+        "hdop":               0.9,
     },
 }
 

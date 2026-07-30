@@ -729,17 +729,58 @@ function handleStarlink(d) {
   settingsTxt.textContent = state.label;
 }
 
+let _gpsLastFix = null;   // {lat, lon, t} — last position with a valid fix
+
 function handleGps(d) {
-  // Show a simple GPS Active indicator — coordinates are not useful on the display.
+  const setTxt = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v;
+  };
+
   // Prefer the explicit fix quality (0=no data/no fix, 2=2D, 3=3D); fall back to
   // coordinate presence. Guard against null coords: `null !== 0` is truthy, which
   // previously made "No Fix" impossible to display.
+  const fix = (typeof d.fix === 'number') ? d.fix : 0;
   const hasfix = (typeof d.fix === 'number')
-    ? d.fix >= 2
+    ? fix >= 2
     : (d.lat != null && d.lon != null && (d.lat !== 0 || d.lon !== 0));
-  document.getElementById('sl-gps-dot').className =
-    `status-dot ${hasfix ? 'on' : 'off'}`;
-  document.getElementById('sl-gps').textContent = hasfix ? 'Active' : 'No Fix';
+
+  // Starlink-view summary indicator + Settings connectivity tile
+  document.getElementById('sl-gps-dot').className = `status-dot ${hasfix ? 'on' : 'off'}`;
+  setTxt('sl-gps', hasfix ? 'Active' : 'No Fix');
+  const connDot = document.getElementById('dot-gps-conn');
+  if (connDot) connDot.className = `status-dot ${hasfix ? 'on' : 'off'}`;
+  setTxt('txt-gps-conn', hasfix ? 'Active' : 'No Fix');
+
+  // ── GPS diagnostics layer ──────────────────────
+  const fixTxt = fix >= 3 ? '3D Fix' : fix === 2 ? '2D Fix' : 'No Fix';
+  setTxt('gps-fix-txt', fixTxt);
+  setStatDot('gps-fix-dot', fix >= 3 ? 'on' : fix === 2 ? 'warn' : 'off');
+
+  const used = d.satellites_used ?? 0;
+  const vis  = d.satellites_visible ?? 0;
+  setTxt('gps-sats', (used || vis) ? `${used} / ${vis}` : '—');
+  // 4 satellites is the minimum for a 3D fix; below that is weak.
+  setStatDot('gps-sats-dot', used >= 5 ? 'on' : used >= 4 ? 'warn' : used > 0 ? 'red' : 'off');
+
+  const hdop = d.hdop;
+  setTxt('gps-hdop', hdop != null ? hdop.toFixed(1) : '—');
+  // HDOP: ≤2 excellent/good, ≤5 moderate, >5 poor.
+  setStatDot('gps-hdop-dot', hdop == null ? 'off' : hdop <= 2 ? 'on' : hdop <= 5 ? 'warn' : 'red');
+
+  setTxt('gps-lat', d.lat != null ? `${d.lat.toFixed(5)}°` : '—');
+  setTxt('gps-lon', d.lon != null ? `${d.lon.toFixed(5)}°` : '—');
+  setTxt('gps-speed', d.speed_kmh != null ? `${Math.round(d.speed_kmh)} km/h` : '—');
+  setTxt('gps-heading', d.heading_deg != null ? `${Math.round(d.heading_deg)}°` : '—');
+
+  // Track last-known-good position (persists across fix loss)
+  if (hasfix && d.lat != null && d.lon != null) {
+    _gpsLastFix = { lat: d.lat, lon: d.lon, t: Date.now() };
+  }
+  if (_gpsLastFix) {
+    setTxt('gps-last-pos', `${_gpsLastFix.lat.toFixed(5)}, ${_gpsLastFix.lon.toFixed(5)}`);
+    setTxt('gps-last-time', new Date(_gpsLastFix.t).toLocaleTimeString());
+  }
 }
 
 // ── System data handler ────────────────────────
