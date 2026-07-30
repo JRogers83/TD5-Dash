@@ -552,15 +552,6 @@
                 <span class="relay-btn__label">Play Doom</span>
               </button>
 
-              <div class="stat-label settings-lower-label">Software</div>
-              <button class="relay-btn" id="btn-update" onclick="triggerUpdate()">
-                <span class="relay-btn__label" id="lbl-update">Check for Updates</span>
-              </button>
-              <button class="relay-btn" id="btn-rollback" onclick="triggerRollback()" disabled>
-                <span class="relay-btn__label" id="lbl-rollback">Roll Back</span>
-              </button>
-              <div class="update-status" id="update-status"></div>
-
               <div class="stat-label settings-lower-label">Pi Health</div>
               <div class="settings-sys-grid">
                 <div class="stat-tile settings-sys-tile">
@@ -580,8 +571,34 @@
           </div>
         </div>
 
-        <!-- Layer 1: Pages (always present, not toggleable) -->
+        <!-- Layer 1: Software (OTA update & rollback) -->
         <div class="layer" data-layer="1">
+          <div class="software-content">
+            <div class="software-panel">
+              <div class="software-title">Software</div>
+              <div class="software-version-row">
+                <span class="software-version-label">Current Version</span>
+                <span class="software-version" id="txt-version">—</span>
+              </div>
+              <p class="software-help">
+                <b>Check for Updates</b> pulls the latest code and restarts the dash.
+                <b>Roll Back</b> reverts the most recent update if something isn't right.
+              </p>
+              <div class="software-actions">
+                <button class="relay-btn relay-btn--primary" id="btn-update" onclick="triggerUpdate()">
+                  <span class="relay-btn__label" id="lbl-update">Check for Updates</span>
+                </button>
+                <button class="relay-btn" id="btn-rollback" onclick="triggerRollback()" disabled>
+                  <span class="relay-btn__label" id="lbl-rollback">Roll Back</span>
+                </button>
+              </div>
+              <div class="update-status" id="update-status"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Layer 2: Pages (always present, not toggleable) -->
+        <div class="layer" data-layer="2">
           <div class="pages-content">
             <div class="pages-header">
               <div class="stat-label">Page Visibility</div>
@@ -594,8 +611,8 @@
           </div>
         </div>
 
-        <!-- Layer 2: Setup wizard (always present, not toggleable) -->
-        <div class="layer" data-layer="2">
+        <!-- Layer 3: Setup wizard (always present, not toggleable) -->
+        <div class="layer" data-layer="3">
           <div class="wizard-content" id="setup-wizard">
             <div class="wizard-header">
               <div class="stat-label">Setup</div>
@@ -644,8 +661,8 @@
           </div>
         </div>
 
-        <!-- Layer 3: Diagnostics (toggleable, off by default) -->
-        <div class="layer" data-layer="3" data-page="settings_diagnostics">
+        <!-- Layer 4: Diagnostics (toggleable, off by default) -->
+        <div class="layer" data-layer="4" data-page="settings_diagnostics">
           <div class="diag-content">
             <div class="diag-section">
               <div class="stat-label">Service Health</div>

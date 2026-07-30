@@ -949,6 +949,8 @@ async function refreshVersionInfo() {
     const r    = await fetch('/system/version');
     const data = await r.json();
     _setRollbackButton(data.rollback_target);
+    const ver = document.getElementById('txt-version');
+    if (ver && data.current_version) ver.textContent = data.current_version;
   } catch (_) {
     // Backend not reachable yet (e.g. mid-restart) — leave button as-is.
   }

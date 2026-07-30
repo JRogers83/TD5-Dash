@@ -482,6 +482,71 @@ html, body {
 }
 .relay-btn--danger .relay-btn__label { color: var(--c-red); }
 
+/* ── Software (OTA update) layer ───────────────── */
+.software-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 24px;
+}
+
+.software-panel {
+  width: 100%;
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.software-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.software-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.software-version-label {
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.software-version {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.software-help {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.software-help b { font-weight: 700; }
+
+.software-actions {
+  display: flex;
+  gap: 14px;
+}
+
+.software-actions .relay-btn { flex: 1; }
+
 .status-item {
   display: flex;
   align-items: center;
