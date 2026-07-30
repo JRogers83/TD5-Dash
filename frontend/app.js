@@ -126,14 +126,25 @@ const throttleGauge = new RadialGauge(Object.assign({}, CLASSIC, FONTS, {
 })).draw();
 
 // ── Engine stat dot colours ────────────────────
-// Battery voltage: red < 12.0, amber 12.0–12.5 or > 14.8, green otherwise
+// Canonical thresholds for the Engine-view status dots. Rationale and sources
+// are documented in documentation/engine-status-thresholds.md — keep the two in
+// sync. Dot meanings: blue=cold/informational, green(on)=normal, amber(warn)=
+// elevated/keep an eye, red=genuinely worth attention.
+
+// Battery/system voltage (V):
+//   red  < 12.0  flat/failing battery
+//   amber 12.0–12.5 low at rest, or > 14.8 over-charging
+//   green otherwise (12.5 rest → ~13.8–14.4 charging is all normal)
 function batteryColor(v) {
   if (v < 12.0) return 'red';
   if (v < 12.5 || v > 14.8) return 'warn';
   return 'on';
 }
 
-// Coolant °C (TD5 thermostat opens ~82°C, normal 85–95°C)
+// Coolant °C — TD5 thermostat opens ~82°C, normal running ~85–95°C, fan/warning
+// territory above ~105°C:
+//   blue < 60 (not warmed up)   green 60–95 (normal)
+//   amber 95–105 (hot)          red ≥ 105 (overheating — genuine concern)
 function coolantColor(c) {
   if (c < 60)  return 'blue';
   if (c < 95)  return 'on';
@@ -141,19 +152,29 @@ function coolantColor(c) {
   return 'red';
 }
 
-// Inlet air temp — high temps indicate intercooler stress
+// Inlet air temp °C — this is the combined MAP/IAT sensor on the inlet manifold,
+// i.e. CHARGE-AIR temperature POST-turbo and POST-intercooler, not ambient. It
+// normally sits at ambient +20–30°C and climbs well beyond that under boost on a
+// warm day, so mid-range readings (e.g. 60°C) are completely normal and NOT a
+// fault. Only sustained very high charge temps (poor intercooling) are worth
+// flagging, and even then it is an efficiency/power note, not an emergency:
+//   blue < 0 (sub-zero intake)  green 0–70 (normal, incl. boost on a warm day)
+//   amber 70–90 (working hard / very hot ambient)   red ≥ 90 (charge air very hot)
+// (Previously red at ≥60°C, which lit up under ordinary summer driving.)
 function airTempColor(c) {
-  if (c < 5)  return 'blue';
-  if (c < 40) return 'on';
-  if (c < 60) return 'warn';
+  if (c < 0)  return 'blue';
+  if (c < 70) return 'on';
+  if (c < 90) return 'warn';
   return 'red';
 }
 
-// Fuel temp — elevated temps risk vapour lock on the TD5 high-pressure system
+// Fuel temp °C — TD5 return-fed fuel warms with use; 40–65°C is common in normal
+// running and higher under sustained load:
+//   blue < 15   green 15–65   amber 65–80   red ≥ 80
 function fuelTempColor(c) {
   if (c < 15) return 'blue';
-  if (c < 50) return 'on';
-  if (c < 65) return 'warn';
+  if (c < 65) return 'on';
+  if (c < 80) return 'warn';
   return 'red';
 }
 
