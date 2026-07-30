@@ -24,7 +24,11 @@ gps_fix: int = 0               # 0=no data, 2=2D fix, 3=3D fix (set by gps_servi
 
 # GPIO state (set by ignition_service / future GPIO service)
 override_mode: bool = False
-sidelights_on: bool = False
+# None until the sidelights GPIO is actually wired. Published to the frontend as
+# `sidelights`; the UI auto day/night switch only fires when this is a real bool,
+# so leaving it None avoids forcing NIGHT mode on every restart while the CarPiHAT
+# hardware is still pending. A future GPIO service writes True/False here.
+sidelights_on: bool | None = None
 
 # Chromium kiosk parent PID (set by main.py lifespan task once Chromium is running).
 # Used by game_service to SIGSTOP/SIGCONT the tree during Doom mode.

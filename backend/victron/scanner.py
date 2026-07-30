@@ -83,7 +83,7 @@ class VictronState:
     current_a:      float = 0.0
 
     # MPPT
-    solar_yield_wh: float = 0.0    # stored as Wh (victron-ble gives kWh — converted)
+    solar_yield_wh: float = 0.0    # stored as Wh (victron-ble already returns Wh)
     charge_state:   str   = "off"
 
     # Orion XS DC-DC charger
@@ -236,18 +236,21 @@ class VictronScanner:
 
         victron-ble SolarChargerData API (verified against 0.9.3):
           parsed.get_charge_state()  → ChargeState enum | None
-          parsed.get_yield_today()   → float | None  (kWh — converted to Wh below)
+          parsed.get_yield_today()   → float | None  (Wh — already scaled by the library)
           parsed.get_solar_power()   → float | None  (W, useful for future display)
 
         Note: get_device_state() was renamed to get_charge_state() in victron-ble 0.9.x.
-        yield_today units confirmed as kWh in 0.9.3.
+        yield_today is returned in Wh — the library already scales the raw 0.01 kWh
+        BLE field up to Wh, so no further ×1000 conversion is applied here. (An earlier
+        version wrongly assumed kWh and multiplied by 1000, inflating e.g. 160 Wh to
+        160,000 Wh; confirmed against the VictronConnect app reading.)
         """
         try:
             state_enum  = parsed.get_charge_state()
-            yield_today = parsed.get_yield_today()     # kWh from library
+            yield_today = parsed.get_yield_today()     # Wh from library
 
             if yield_today is not None:
-                self._state.solar_yield_wh = round(yield_today * 1000)  # kWh → Wh
+                self._state.solar_yield_wh = round(yield_today)
 
             if state_enum is not None:
                 state_int = state_enum.value if hasattr(state_enum, 'value') else int(state_enum)

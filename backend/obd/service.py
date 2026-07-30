@@ -47,8 +47,15 @@ log = logging.getLogger(__name__)
 
 FTDI_URL      = os.getenv("TD5_FTDI_URL",      "ftdi://ftdi:232/1")
 POLL_INTERVAL = float(os.getenv("TD5_POLL_INTERVAL", "1.0"))
-_RETRY_MIN_S  = 5.0    # initial retry delay
+_RETRY_MIN_S  = 5.0    # base retry delay (used throughout the fast window)
 _RETRY_MAX_S  = 60.0   # cap: retry at most once per minute when no cable
+# On a cold boot the FTDI cable may not be enumerated yet and the ECU auth
+# handshake needs the engine running, so the first few attempts routinely fail.
+# Exponential backoff alone then pushes the retry delay to _RETRY_MAX_S before the
+# ECU is ready, delaying first live data by minutes. Keep retrying at _RETRY_MIN_S
+# during this window after (re)start so we reconnect promptly once the ECU comes up;
+# the window is re-armed after any successful session ends (e.g. engine restart).
+_FAST_RETRY_WINDOW_S = 90.0
 FAULT_POLL_INTERVAL_S = 30.0  # read fault codes every N seconds
 HISTORY_WRITE_INTERVAL_S = 10.0  # write to engine_history every N seconds
 
@@ -211,6 +218,7 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
     """
     global _live_session, _live_conn
     _retry_delay = _RETRY_MIN_S
+    _fast_until  = time.monotonic() + _FAST_RETRY_WINDOW_S
     while True:
         log.info("Connecting to TD5 ECU at %s …", FTDI_URL)
         try:
@@ -360,12 +368,21 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
             log.exception("Unexpected error in OBD poll loop — retrying in %.0f s", _retry_delay)
             _retry_delay = min(_retry_delay * 2, _RETRY_MAX_S)
         else:
-            _retry_delay = _RETRY_MIN_S  # reset on clean session exit
+            # Clean session exit (e.g. engine stopped / read error dropped the
+            # session). Reset the backoff and re-arm the fast-retry window so we
+            # reconnect promptly when the ECU comes back.
+            _retry_delay = _RETRY_MIN_S
+            _fast_until  = time.monotonic() + _FAST_RETRY_WINDOW_S
         finally:
             _live_session = None
             _live_conn    = None
 
-        time.sleep(_retry_delay)
+        # During the fast window retry at the base interval; afterwards fall back
+        # to the escalating backoff so we don't hammer USB when no cable is present.
+        if time.monotonic() < _fast_until:
+            time.sleep(_RETRY_MIN_S)
+        else:
+            time.sleep(_retry_delay)
 
 
 # ── Async entry point ──────────────────────────────────────────────────────────
