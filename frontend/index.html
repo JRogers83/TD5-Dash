@@ -342,6 +342,90 @@
 
           </div>
         </div>
+
+        <!-- Layer 1: Victron detailed stats (per-unit) -->
+        <div class="layer" data-layer="1">
+          <div class="victron-detail-content">
+
+            <!-- SmartShunt -->
+            <div class="vdetail-col">
+              <div class="stat-label">Leisure Battery · SmartShunt</div>
+              <div class="stat-grid">
+                <div class="stat-tile">
+                  <div class="stat-label">State of Charge</div>
+                  <div class="stat-value" id="vd-soc">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Voltage</div>
+                  <div class="stat-value" id="vd-voltage">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Current</div>
+                  <div class="stat-value" id="vd-current">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Power</div>
+                  <div class="stat-value" id="vd-power">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Consumed</div>
+                  <div class="stat-value" id="vd-consumed">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Time to Go</div>
+                  <div class="stat-value" id="vd-ttg">—</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vdivider"></div>
+
+            <!-- MPPT solar -->
+            <div class="vdetail-col">
+              <div class="stat-label">Solar · MPPT</div>
+              <div class="stat-grid">
+                <div class="stat-tile">
+                  <div class="stat-label">Charge State</div>
+                  <div class="stat-value" id="vd-solar-state">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Solar Power</div>
+                  <div class="stat-value" id="vd-solar-power">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Yield Today</div>
+                  <div class="stat-value" id="vd-solar-yield">—</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vdivider"></div>
+
+            <!-- Orion XS DC-DC -->
+            <div class="vdetail-col">
+              <div class="stat-label">DC-DC · Orion XS</div>
+              <div class="stat-grid">
+                <div class="stat-tile">
+                  <div class="stat-label">State</div>
+                  <div class="stat-value" id="vd-orion-state">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Alt Voltage</div>
+                  <div class="stat-value" id="vd-orion-in">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Output Voltage</div>
+                  <div class="stat-value" id="vd-orion-out-v">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Output Current</div>
+                  <div class="stat-value" id="vd-orion-out-a">—</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
       </div>
 
       <!-- ── View 3 · Starlink ─────────────────── -->

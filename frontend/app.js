@@ -556,6 +556,46 @@ function handleVictron(d) {
   document.getElementById('txt-orion-state').textContent = orion.label;
   document.getElementById('txt-orion-input').textContent =
     d.orion_input_v > 0 ? `${d.orion_input_v.toFixed(1)} V` : '— V';
+
+  _renderVictronDetail(d, state, orion);
+}
+
+// Detailed per-unit Victron layer (Victron view, layer 1)
+function _renderVictronDetail(d, chargeState, orion) {
+  const setTxt = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v;
+  };
+  const sign = (n) => (n > 0 ? '+' : '');
+
+  // SmartShunt
+  setTxt('vd-soc', `${Math.round(d.soc_pct)} %`);
+  setTxt('vd-voltage', `${d.voltage_v.toFixed(2)} V`);
+  setTxt('vd-current', `${sign(d.current_a)}${d.current_a.toFixed(1)} A`);
+  const power = d.voltage_v * d.current_a;
+  setTxt('vd-power', `${sign(power)}${Math.round(power)} W`);
+  setTxt('vd-consumed', d.consumed_ah != null ? `${d.consumed_ah.toFixed(1)} Ah` : '—');
+  setTxt('vd-ttg', _fmtTimeToGo(d.time_to_go_min, d.current_a));
+
+  // MPPT solar
+  setTxt('vd-solar-state', (CHARGE_STATE_LABELS[d.charge_state] ?? { label: d.charge_state }).label);
+  setTxt('vd-solar-power', d.solar_power_w != null ? `${Math.round(d.solar_power_w)} W` : '—');
+  setTxt('vd-solar-yield', `${d.solar_yield_wh} Wh`);
+
+  // Orion XS DC-DC
+  setTxt('vd-orion-state', orion.label);
+  setTxt('vd-orion-in', d.orion_input_v > 0 ? `${d.orion_input_v.toFixed(1)} V` : '—');
+  setTxt('vd-orion-out-v', d.orion_output_v > 0 ? `${d.orion_output_v.toFixed(1)} V` : '—');
+  setTxt('vd-orion-out-a', d.orion_output_a != null ? `${d.orion_output_a.toFixed(1)} A` : '—');
+}
+
+// Time-to-go: null means "not discharging" (charging/idle) → show ∞ when actually
+// charging, otherwise a dash. Minutes are shown as e.g. "2d 7h", "31 h", or "45 m".
+function _fmtTimeToGo(mins, current) {
+  if (mins == null) return (typeof current === 'number' && current >= 0) ? '∞' : '—';
+  if (mins >= 1440) return `${Math.floor(mins / 1440)}d ${Math.floor((mins % 1440) / 60)}h`;
+  if (mins >= 60)   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  return `${mins} m`;
 }
 
 // ── Weather data handler ───────────────────────
