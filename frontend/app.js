@@ -75,10 +75,18 @@ const rpmGauge = new RadialGauge(Object.assign({}, CLASSIC, FONTS, {
   fontNumbersSize: Math.round(42 * GAUGE_SIZE / 290),
   fontUnitsSize:   Math.round(36 * GAUGE_SIZE / 290),
   numbersMargin:   4,
+  // Zones (TD5, owner/forum consensus — no factory redline marked):
+  //   green  idle–3000  normal low-rev torque band + cruising
+  //   amber  3000–4000  caution
+  //   red    4000+      approaching governed/rev-limiter range (~4200–4500)
+  // Red is made deliberately prominent (higher opacity + wider band) so it
+  // reads at a glance while driving.
   highlights: [
-    { from: 4500, to: 5000, color: 'rgba(255, 82, 82, 0.35)' },
+    { from: 0,    to: 3000, color: 'rgba(0, 230, 118, 0.18)' },
+    { from: 3000, to: 4000, color: 'rgba(255, 171, 64, 0.38)' },
+    { from: 4000, to: 5000, color: 'rgba(255, 82, 82, 0.60)' },
   ],
-  highlightsWidth: 10,
+  highlightsWidth: 14,
 })).draw();
 
 // Boost — 0-2.5 bar
@@ -702,7 +710,12 @@ function handleStarlink(d) {
 
 function handleGps(d) {
   // Show a simple GPS Active indicator — coordinates are not useful on the display.
-  const hasfix = d.lat !== 0 || d.lon !== 0;
+  // Prefer the explicit fix quality (0=no data/no fix, 2=2D, 3=3D); fall back to
+  // coordinate presence. Guard against null coords: `null !== 0` is truthy, which
+  // previously made "No Fix" impossible to display.
+  const hasfix = (typeof d.fix === 'number')
+    ? d.fix >= 2
+    : (d.lat != null && d.lon != null && (d.lat !== 0 || d.lon !== 0));
   document.getElementById('sl-gps-dot').className =
     `status-dot ${hasfix ? 'on' : 'off'}`;
   document.getElementById('sl-gps').textContent = hasfix ? 'Active' : 'No Fix';
@@ -1154,6 +1167,7 @@ const NAV = (() => {
     const enabled = enabledLayers[curView];
     curLayer[curView] = enabled.indexOf(targetLayerDomIdx);
     _updateIndicator();
+    _onLayerEntered(curView, targetLayerDomIdx);
 
     const leaving = currEl;
     setTimeout(() => {
@@ -1187,6 +1201,17 @@ const NAV = (() => {
 
   function _updateIndicator() {
     // No-op — nav dots removed per user preference
+  }
+
+  // Called whenever a layer becomes the active layer (via swipe or navigateTo).
+  function _onLayerEntered(viewIdx, layerDomIdx) {
+    // Engine view (0) → Engine Stats layer (2): auto-load the history charts on
+    // entry so they populate immediately instead of staying blank until the user
+    // manually changes the time range.
+    if (viewIdx === 0 && layerDomIdx === 2 && typeof loadHistory === 'function') {
+      const active = document.querySelector('.stats-range-btn--active');
+      loadHistory(active ? active.dataset.range : 'hour');
+    }
   }
 
   return {

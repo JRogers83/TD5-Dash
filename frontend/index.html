@@ -17,9 +17,11 @@
         <!-- Layer 0: Main Gauges -->
         <div class="layer" data-layer="0">
           <div class="engine-content">
-            <div class="gauge-col"><canvas id="canvas-rpm"      aria-label="Engine RPM"></canvas></div>
-            <div class="gauge-col"><canvas id="canvas-boost"    aria-label="Boost pressure"></canvas></div>
+            <!-- Order (left→right): Throttle, Boost, RPM. RPM sits on the right,
+                 closest to the driver; throttle takes the less-prominent slot. -->
             <div class="gauge-col"><canvas id="canvas-throttle" aria-label="Throttle position"></canvas></div>
+            <div class="gauge-col"><canvas id="canvas-boost"    aria-label="Boost pressure"></canvas></div>
+            <div class="gauge-col"><canvas id="canvas-rpm"      aria-label="Engine RPM"></canvas></div>
 
             <div class="engine-stats">
               <div class="stat-tile">

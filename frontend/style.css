@@ -163,9 +163,12 @@ html, body {
   color: var(--text-muted);
 }
 
-/* Engine screen (layer 0) — muted grey labels were hard to read in sunlight;
-   scoped here rather than changing --text-muted globally. */
-.engine-content .stat-label {
+/* Muted grey labels were hard to read in sunlight; brighten them to the primary
+   text colour on the data-dense screens. Scoped per-view rather than changing
+   --text-muted globally so intentionally-dim UI elsewhere is unaffected. */
+.engine-content .stat-label,
+.victron-content .stat-label,
+#view-settings .stat-label {
   color: var(--text);
 }
 
@@ -209,7 +212,7 @@ html, body {
 
 .g-unit {
   font-size: 20px;
-  fill: var(--text-muted);
+  fill: var(--text);
   text-anchor: middle;
   dominant-baseline: middle;
   letter-spacing: 0.06em;
@@ -218,7 +221,7 @@ html, body {
 
 .g-label {
   font-size: 20px;
-  fill: var(--text-muted);
+  fill: var(--text);
   text-anchor: middle;
   dominant-baseline: middle;
   letter-spacing: 0.06em;
@@ -359,7 +362,7 @@ html, body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--text-muted);
+  color: var(--text);
   cursor: pointer;
   transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
@@ -383,7 +386,7 @@ html, body {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 .bright-control {
@@ -430,14 +433,14 @@ html, body {
 /* ── OTA update status ────────────────────────── */
 .update-status {
   font-size: 16px;
-  color: var(--text-dim);
+  color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
   min-height: 0;
 }
 
 .update-status--ok {
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 /* ── Relay (amplifier) toggle ─────────────────── */
@@ -451,7 +454,7 @@ html, body {
   background: var(--surface);
   border: 2px solid var(--border);
   border-radius: 8px;
-  color: var(--text-muted);
+  color: var(--text);
   cursor: pointer;
   transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
@@ -823,25 +826,26 @@ html, body {
   position: relative;
 }
 
-/* Playlist grid — horizontal scroll */
+/* Playlist grid — wraps into rows and scrolls VERTICALLY. Horizontal scrolling
+   fought with the carousel swipe (and only ever showed the first ~5 playlists);
+   vertical scroll matches the working track list and reveals the whole library. */
 .sp-pl-list {
-  display: flex;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  align-content: start;
   gap: 12px;
   padding: 12px 16px;
   height: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  touch-action: pan-x;
+  touch-action: pan-y;
 }
 
 .sp-pl-list::-webkit-scrollbar { display: none; }
 
 .sp-pl-card {
-  flex-shrink: 0;
-  width: 220px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -851,7 +855,6 @@ html, body {
   border-radius: 8px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  align-self: flex-start;
 }
 
 .sp-pl-card:active {
@@ -1088,7 +1091,7 @@ html, body {
   font-size: 20px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 .wx-loading {
@@ -1151,7 +1154,7 @@ html, body {
   display: flex;
   gap: 16px;
   font-size: 20px;
-  color: var(--text-muted);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
   text-transform: uppercase;
   letter-spacing: 0.06em;
