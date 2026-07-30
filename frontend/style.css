@@ -2024,3 +2024,27 @@ html, body {
   letter-spacing: 0.15em;
   text-transform: uppercase;
 }
+
+/* ── Boot splash ───────────────────────────────── */
+#boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #0d0d0d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.5s ease;
+}
+
+#boot-splash-logo {
+  max-width: 55%;
+  max-height: 70%;
+  object-fit: contain;
+}
+
+/* Fade out, then display:none removes it from the tree (JS drops it after). */
+#boot-splash.boot-splash--hidden {
+  opacity: 0;
+  pointer-events: none;
+}

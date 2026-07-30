@@ -1912,6 +1912,19 @@ function setConnState(cls, label) {
 
 let _wsEverConnected = false;
 
+// Fade out and remove the boot splash. Safe to call more than once.
+let _bootSplashGone = false;
+function _dismissBootSplash() {
+  if (_bootSplashGone) return;
+  _bootSplashGone = true;
+  const el = document.getElementById('boot-splash');
+  if (!el) return;
+  el.classList.add('boot-splash--hidden');
+  setTimeout(() => el.remove(), 600);
+}
+// Safety net: if the WebSocket never connects, don't leave the splash up forever.
+setTimeout(_dismissBootSplash, 15000);
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const ws    = new WebSocket(`${proto}//${location.host}/ws`);
@@ -1926,6 +1939,7 @@ function connect() {
     _wsEverConnected = true;
     setConnState('connected', 'Online');
     document.dispatchEvent(new CustomEvent('td5-ws-connected'));
+    _dismissBootSplash();
   };
 
   ws.onmessage = e => {

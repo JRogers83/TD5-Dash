@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -557,6 +557,21 @@ async def system_shutdown() -> dict:
 
 # Game-mode router (before static catch-all).
 app.include_router(game_service.router)
+
+
+@app.get("/LR-Logo.png")
+async def lr_logo():
+    """Serve the Land Rover badge (repo root) to the frontend boot splash.
+
+    The badge is not committed to git (it lives on the Pi / is placed at
+    deploy time), so fall back to a 404 the frontend handles gracefully
+    rather than a 500 if it's absent in a given checkout.
+    """
+    logo = Path(__file__).parent.parent / "LR-Logo.png"
+    if not logo.is_file():
+        return JSONResponse(status_code=404, content={"error": "logo_not_found"})
+    return FileResponse(logo)
+
 
 # Static files mount last so /ws, /api/*, /spotify/*, /system/* are matched first.
 app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="static")

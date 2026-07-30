@@ -8,6 +8,14 @@
 </head>
 <body style="background:#0d0d0d">
 
+  <!-- Boot splash — bridges Chromium startup → first WebSocket data so the
+       screen shows the logo (continuing the feh/Plymouth splash) rather than
+       flashing black. Removed on the first WS connection (see app.js). -->
+  <div id="boot-splash">
+    <img id="boot-splash-logo" src="/LR-Logo.png" alt=""
+         onerror="this.style.display='none'">
+  </div>
+
   <div id="carousel">
     <div id="views">
 
