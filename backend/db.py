@@ -40,6 +40,7 @@ _SETTINGS_DEFAULTS: dict[str, str] = {
     "throttle_wot": "90.0",
     "brightness_day": "180",
     "brightness_night": "80",
+    "speed_unit": "kph",   # "kph" | "mph" — global display unit for vehicle speed
     # weather_lat, weather_lon, weather_location are seeded dynamically
     # from .env at first run (see _seed_weather_defaults)
 }

@@ -182,6 +182,51 @@ function setStatDot(id, colorCls) {
   document.getElementById(id).className = `status-dot ${colorCls}`;
 }
 
+// ── Speed units (global km/h ↔ mph) ─────────────
+// All vehicle-speed values are held/broadcast in km/h; this converts for display
+// only. The preference is persisted in the settings DB (key: speed_unit) and read
+// on startup. Weather wind speed is intentionally left in km/h.
+let _speedUnit = 'kph';   // 'kph' | 'mph'
+const _KPH_TO_MPH = 0.621371;
+
+function speedToUnit(kph) {
+  if (kph == null) return null;
+  return _speedUnit === 'mph' ? kph * _KPH_TO_MPH : kph;
+}
+function speedUnitLabel() {
+  return _speedUnit === 'mph' ? 'mph' : 'km/h';
+}
+// Formatted "<value> <unit>", rounded. Returns '—' for null.
+function fmtSpeed(kph) {
+  if (kph == null) return '—';
+  return `${Math.round(speedToUnit(kph))} ${speedUnitLabel()}`;
+}
+
+function _updateSpeedUnitButtons() {
+  const k = document.getElementById('unit-kph');
+  const m = document.getElementById('unit-mph');
+  if (k) k.classList.toggle('bright-mode-btn--active', _speedUnit === 'kph');
+  if (m) m.classList.toggle('bright-mode-btn--active', _speedUnit === 'mph');
+}
+
+// Settings toggle handler — persists to the DB and refreshes displays that don't
+// redraw on the next WS tick (trip average, history chart, held GPS values).
+function setSpeedUnit(unit) {
+  _speedUnit = (unit === 'mph') ? 'mph' : 'kph';
+  _updateSpeedUnitButtons();
+  fetch('/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ speed_unit: _speedUnit }),
+  }).catch(() => {});
+  if (typeof _trip !== 'undefined') _trip.render();
+  if (typeof _renderGps === 'function') _renderGps();
+  if (typeof loadHistory === 'function') {
+    const active = document.querySelector('.stats-range-btn--active');
+    if (active) loadHistory(active.dataset.range);
+  }
+}
+
 // ── Coolant trend indicator ─────────────────────
 // Replaces the static dot with a dynamic shape + colour.
 const COOLANT_NORMAL_MAX     = 95;    // green up to this
@@ -769,59 +814,98 @@ function handleStarlink(d) {
   settingsTxt.textContent = state.label;
 }
 
-let _gpsLastFix = null;   // {lat, lon, t} — last position with a valid fix
+// GPS fix state model (round-2 #5):
+//   live 3D  → green "3D Fix"     live 2D → amber "2D Fix"
+//   dropped  → red "Last Known" (hold last position) for up to GPS_STALE_MS
+//   timed out/never → grey "No Fix" (last-known cleared)
+const GPS_STALE_MS = 5 * 60 * 1000;   // hold "last known" for 5 min after a drop
+let _gpsLastFix = null;   // {lat, lon, speed_kmh, heading_deg, fix, t}
+let _gpsHasLive = false;  // a valid fix arrived on the most recent message
+let _gpsSats    = { used: 0, vis: 0, hdop: null };  // latest, even without a fix
 
 function handleGps(d) {
-  const setTxt = (id, v) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = v;
-  };
-
-  // Prefer the explicit fix quality (0=no data/no fix, 2=2D, 3=3D); fall back to
-  // coordinate presence. Guard against null coords: `null !== 0` is truthy, which
-  // previously made "No Fix" impossible to display.
   const fix = (typeof d.fix === 'number') ? d.fix : 0;
-  const hasfix = (typeof d.fix === 'number')
-    ? fix >= 2
-    : (d.lat != null && d.lon != null && (d.lat !== 0 || d.lon !== 0));
+  // Satellites/HDOP are meaningful even without a position fix (still tracking).
+  _gpsSats = {
+    used: d.satellites_used ?? 0,
+    vis:  d.satellites_visible ?? 0,
+    hdop: (d.hdop != null) ? d.hdop : null,
+  };
+  if (fix >= 2 && d.lat != null && d.lon != null) {
+    _gpsLastFix = {
+      lat: d.lat, lon: d.lon,
+      speed_kmh: d.speed_kmh, heading_deg: d.heading_deg,
+      fix, t: Date.now(),
+    };
+    _gpsHasLive = true;
+  } else {
+    _gpsHasLive = false;
+  }
+  _renderGps();
+}
+
+function _renderGps() {
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const setDot = (id, cls) => { const el = document.getElementById(id); if (el) el.className = `status-dot ${cls}`; };
+
+  const now = Date.now();
+  const ageMs = _gpsLastFix ? (now - _gpsLastFix.t) : Infinity;
+  const haveHeld = _gpsLastFix && ageMs < GPS_STALE_MS;
+
+  // Determine state
+  let fixTxt, fixDot, summaryTxt, summaryDot, showPos;
+  if (_gpsHasLive) {
+    const f = _gpsLastFix.fix;
+    fixTxt = f >= 3 ? '3D Fix' : '2D Fix';
+    fixDot = f >= 3 ? 'on' : 'warn';
+    summaryTxt = 'Active'; summaryDot = fixDot;
+    showPos = true;
+  } else if (haveHeld) {
+    fixTxt = 'Last Known'; fixDot = 'red';
+    summaryTxt = 'Last Known'; summaryDot = 'red';
+    showPos = true;   // hold last-known position rather than blanking
+  } else {
+    fixTxt = 'No Fix'; fixDot = 'off';
+    summaryTxt = 'No Fix'; summaryDot = 'off';
+    showPos = false;
+    if (_gpsLastFix && !haveHeld) _gpsLastFix = null;  // stale → drop it
+  }
 
   // Starlink-view summary indicator + Settings connectivity tile
-  document.getElementById('sl-gps-dot').className = `status-dot ${hasfix ? 'on' : 'off'}`;
-  setTxt('sl-gps', hasfix ? 'Active' : 'No Fix');
-  const connDot = document.getElementById('dot-gps-conn');
-  if (connDot) connDot.className = `status-dot ${hasfix ? 'on' : 'off'}`;
-  setTxt('txt-gps-conn', hasfix ? 'Active' : 'No Fix');
+  setDot('sl-gps-dot', summaryDot); setTxt('sl-gps', summaryTxt);
+  setDot('dot-gps-conn', summaryDot); setTxt('txt-gps-conn', summaryTxt);
 
-  // ── GPS diagnostics layer ──────────────────────
-  const fixTxt = fix >= 3 ? '3D Fix' : fix === 2 ? '2D Fix' : 'No Fix';
+  // GPS diagnostics layer — fix quality
   setTxt('gps-fix-txt', fixTxt);
-  setStatDot('gps-fix-dot', fix >= 3 ? 'on' : fix === 2 ? 'warn' : 'off');
+  setDot('gps-fix-dot', fixDot);
 
-  const used = d.satellites_used ?? 0;
-  const vis  = d.satellites_visible ?? 0;
+  // Satellites / HDOP (shown even without a fix)
+  const { used, vis, hdop } = _gpsSats;
   setTxt('gps-sats', (used || vis) ? `${used} / ${vis}` : '—');
-  // 4 satellites is the minimum for a 3D fix; below that is weak.
-  setStatDot('gps-sats-dot', used >= 5 ? 'on' : used >= 4 ? 'warn' : used > 0 ? 'red' : 'off');
-
-  const hdop = d.hdop;
+  setDot('gps-sats-dot', used >= 5 ? 'on' : used >= 4 ? 'warn' : used > 0 ? 'red' : 'off');
   setTxt('gps-hdop', hdop != null ? hdop.toFixed(1) : '—');
-  // HDOP: ≤2 excellent/good, ≤5 moderate, >5 poor.
-  setStatDot('gps-hdop-dot', hdop == null ? 'off' : hdop <= 2 ? 'on' : hdop <= 5 ? 'warn' : 'red');
+  setDot('gps-hdop-dot', hdop == null ? 'off' : hdop <= 2 ? 'on' : hdop <= 5 ? 'warn' : 'red');
 
-  setTxt('gps-lat', d.lat != null ? `${d.lat.toFixed(5)}°` : '—');
-  setTxt('gps-lon', d.lon != null ? `${d.lon.toFixed(5)}°` : '—');
-  setTxt('gps-speed', d.speed_kmh != null ? `${Math.round(d.speed_kmh)} km/h` : '—');
-  setTxt('gps-heading', d.heading_deg != null ? `${Math.round(d.heading_deg)}°` : '—');
+  // Live position/speed/heading (held on drop, blank on no-fix)
+  const p = showPos ? _gpsLastFix : null;
+  setTxt('gps-lat', p ? `${p.lat.toFixed(5)}°` : '—');
+  setTxt('gps-lon', p ? `${p.lon.toFixed(5)}°` : '—');
+  setTxt('gps-speed', p ? fmtSpeed(p.speed_kmh) : '—');
+  setTxt('gps-heading', (p && p.heading_deg != null) ? `${Math.round(p.heading_deg)}°` : '—');
 
-  // Track last-known-good position (persists across fix loss)
-  if (hasfix && d.lat != null && d.lon != null) {
-    _gpsLastFix = { lat: d.lat, lon: d.lon, t: Date.now() };
-  }
+  // Last-known section (retained until the 5-min timeout clears _gpsLastFix)
   if (_gpsLastFix) {
     setTxt('gps-last-pos', `${_gpsLastFix.lat.toFixed(5)}, ${_gpsLastFix.lon.toFixed(5)}`);
     setTxt('gps-last-time', new Date(_gpsLastFix.t).toLocaleTimeString());
+  } else {
+    setTxt('gps-last-pos', '—');
+    setTxt('gps-last-time', '—');
   }
 }
+
+// Re-evaluate periodically so a dropped fix downgrades to "No Fix" after the
+// timeout even if the backend stops sending updates.
+setInterval(_renderGps, 20000);
 
 // ── System data handler ────────────────────────
 function setDot(id, on) {
@@ -1103,6 +1187,22 @@ const NAV = (() => {
   // Touch state
   let tx0 = 0, ty0 = 0;
   let axis = null;
+  let scrollEl = null;   // scrollable ancestor of the touch target, if any
+
+  // Walk up from the touch target looking for an element that can actually
+  // scroll vertically. If the gesture starts inside one, vertical drags must be
+  // left to native scrolling — the carousel handler must NOT preventDefault them
+  // (that was silently killing the Spotify playlist list's scroll).
+  function _findVScrollable(node) {
+    while (node && node.nodeType === 1 && node.id !== 'carousel') {
+      const oy = getComputedStyle(node).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight + 1) {
+        return node;
+      }
+      node = node.parentNode;
+    }
+    return null;
+  }
 
   function init(pageFlags) {
     viewEls = Array.from(document.querySelectorAll('.view'));
@@ -1153,9 +1253,13 @@ const NAV = (() => {
     tx0 = e.touches[0].clientX;
     ty0 = e.touches[0].clientY;
     axis = null;
+    scrollEl = _findVScrollable(e.target);
   }
 
   function _onMove(e) {
+    // A vertical drag inside a scrollable element is a native scroll — never
+    // preventDefault it (and never lock it as a nav gesture).
+    if (axis === 'y' && scrollEl) return;
     if (axis) {
       e.preventDefault(); // suppress overscroll and future synthetic clicks
       return;
@@ -1164,14 +1268,22 @@ const NAV = (() => {
     const dy = Math.abs(e.touches[0].clientY - ty0);
     if (dx > LOCK_PX || dy > LOCK_PX) {
       axis = dx > dy ? 'x' : 'y';
+      if (axis === 'y' && scrollEl) return;   // let the container scroll natively
       e.preventDefault();
     }
   }
 
   function _onEnd(e) {
-    if (_browseOpen) return;
     const dx = tx0 - e.changedTouches[0].clientX;
     const dy = ty0 - e.changedTouches[0].clientY;
+    const _scrolled = scrollEl;
+    scrollEl = null;
+
+    // A vertical gesture inside a scroll container was native scrolling — don't
+    // also treat it as a navigation swipe.
+    if (axis === 'y' && _scrolled) { axis = null; return; }
+
+    if (_browseOpen) { axis = null; return; }
 
     if (!axis) {
       // No axis locked during move — determine from final delta
@@ -1184,7 +1296,13 @@ const NAV = (() => {
       goView(dx > 0 ? curView + 1 : curView - 1);
       acted = true;
     } else if (axis === 'y' && Math.abs(dy) > SWIPE_MIN) {
-      _stepLayer(dy > 0 ? 1 : -1);
+      // Spotify view (index 1) has a single layer; a downward swipe there opens
+      // the playlist browser as an alternative to the on-screen button.
+      if (curView === 1 && dy > 0 && typeof _openBrowse === 'function') {
+        _openBrowse();
+      } else {
+        _stepLayer(dy > 0 ? 1 : -1);
+      }
       acted = true;
     }
     // Suppress the synthetic click the browser fires ~300ms after touchend —
@@ -1513,13 +1631,57 @@ function _updateDTCList(faultCodes) {
     const expectedTag = f.expected
       ? ' <span class="dtc-expected">expected</span>'
       : '';
-    return `<div class="dtc-row${f.expected ? ' dtc-row--expected' : ''}">
+    return `<div class="dtc-row${f.expected ? ' dtc-row--expected' : ''}" data-code="${f.code}">
       <span class="dtc-code">${f.code}</span>
       <span class="dtc-desc">${f.description}${expectedTag}</span>
       <span class="dtc-count">×${f.count}</span>
     </div>`;
   }).join('');
 }
+
+// ── Fault-code library (tappable fault detail) ──
+const _SEVERITY_LABEL = { info: 'Info', low: 'Low', medium: 'Medium', high: 'High' };
+
+async function _showFaultDetail(code) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  let d;
+  try {
+    const r = await fetch(`/obd/dtc/${encodeURIComponent(code)}`);
+    d = await r.json();
+  } catch (_) {
+    d = { code, description: '', explanation: 'Fault detail unavailable.',
+          causes: [], severity: '', count_note: '' };
+  }
+  set('dtc-detail-code', d.code);
+  set('dtc-detail-desc', d.description || '');
+  set('dtc-detail-expl', d.explanation || '');
+  const sev = document.getElementById('dtc-detail-severity');
+  if (sev) {
+    sev.textContent = _SEVERITY_LABEL[d.severity] || '';
+    sev.className = `dtc-detail-severity dtc-sev--${d.severity || 'info'}`;
+    sev.style.display = d.severity ? '' : 'none';
+  }
+  const causes = document.getElementById('dtc-detail-causes');
+  if (causes) {
+    causes.innerHTML = (d.causes || []).map(c => `<li>${c}</li>`).join('');
+  }
+  set('dtc-detail-note', d.count_note || '');
+  document.getElementById('dtc-detail').style.display = 'flex';
+}
+
+function _hideFaultDetail() {
+  document.getElementById('dtc-detail').style.display = 'none';
+}
+
+// Delegated tap handling — rows are rebuilt via innerHTML, but #dtc-list persists.
+document.getElementById('dtc-list').addEventListener('click', (e) => {
+  const row = e.target.closest('.dtc-row');
+  if (row && row.dataset.code) _showFaultDetail(row.dataset.code);
+});
+document.getElementById('dtc-detail-close').addEventListener('click', _hideFaultDetail);
+document.getElementById('dtc-detail').addEventListener('click', (e) => {
+  if (e.target.id === 'dtc-detail') _hideFaultDetail();  // backdrop tap closes
+});
 
 function clearDTC() {
   document.getElementById('dtc-clear-confirm').style.display = 'flex';
@@ -1553,10 +1715,12 @@ const _trip = {
   startTime: Date.now(),
 
   update(d) {
-    if (d.rpm > this.peakRpm) this.peakRpm = d.rpm;
-    if (d.boost_bar > this.peakBoost) this.peakBoost = d.boost_bar;
-    if (d.coolant_temp_c > this.peakCoolant) this.peakCoolant = d.coolant_temp_c;
-    if (d.road_speed_kph > 0) {
+    // Plausibility guards — a corrupt frame must never latch as a "peak".
+    // (The backend now bounds RPM too; this is belt-and-braces on the display.)
+    if (d.rpm > this.peakRpm && d.rpm <= 6000) this.peakRpm = d.rpm;
+    if (d.boost_bar > this.peakBoost && d.boost_bar <= 3.5) this.peakBoost = d.boost_bar;
+    if (d.coolant_temp_c > this.peakCoolant && d.coolant_temp_c <= 200) this.peakCoolant = d.coolant_temp_c;
+    if (d.road_speed_kph > 0 && d.road_speed_kph <= 220) {
       this.speedSum += d.road_speed_kph;
       this.speedCount++;
     }
@@ -1568,7 +1732,7 @@ const _trip = {
     s('txt-trip-peak-boost', this.peakBoost > 0 ? `${this.peakBoost.toFixed(2)} bar` : '—');
     s('txt-trip-peak-coolant', this.peakCoolant > 0 ? `${Math.round(this.peakCoolant)} °C` : '—');
     s('txt-trip-avg-speed', this.speedCount > 0
-      ? `${Math.round(this.speedSum / this.speedCount)} kph` : '—');
+      ? fmtSpeed(this.speedSum / this.speedCount) : '—');
     const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
     s('txt-trip-time', formatUptime(elapsed));
   },
@@ -1624,7 +1788,7 @@ function _updateRawData(d) {
   const s = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   s('raw-rpm',      d.rpm != null ? `${d.rpm} RPM` : '—');
   s('raw-battery',  d.battery_v != null ? `${d.battery_v.toFixed(2)} V` : '—');
-  s('raw-speed',    d.road_speed_kph != null ? `${d.road_speed_kph} kph` : '—');
+  s('raw-speed',    fmtSpeed(d.road_speed_kph));
   s('raw-coolant',  d.coolant_temp_c != null ? `${d.coolant_temp_c} °C` : '—');
   s('raw-air',      d.inlet_air_temp_c != null ? `${d.inlet_air_temp_c} °C` : '—');
   s('raw-ext',      d.external_temp_c != null ? `${d.external_temp_c} °C` : '—');
@@ -1751,7 +1915,11 @@ function reimportWeatherLocation() {
 }
 
 // ── Engine Stats charts ─────────────────────────
-function _drawLineChart(canvasId, data, color) {
+// opts.fixedMin / opts.fixedMax pin the Y axis to a fixed range (values are
+// clamped into it) instead of auto-scaling to the data. Fixed ranges keep a
+// trace readable and stop a single outlier (e.g. a stray corrupt RPM row) from
+// flattening the whole line by blowing up the auto-scale.
+function _drawLineChart(canvasId, data, color, opts = {}) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || !data.length) return;
   const ctx = canvas.getContext('2d');
@@ -1759,11 +1927,19 @@ function _drawLineChart(canvasId, data, color) {
   const h = canvas.height = canvas.clientHeight;
   ctx.clearRect(0, 0, w, h);
 
-  const vals = data.filter(v => v != null);
+  let vals = data.filter(v => v != null);
   if (vals.length < 2) return;
 
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
+  const fixed = opts.fixedMin != null && opts.fixedMax != null;
+  let min, max;
+  if (fixed) {
+    min = opts.fixedMin;
+    max = opts.fixedMax;
+    vals = vals.map(v => Math.max(min, Math.min(max, v)));  // clamp into range
+  } else {
+    min = Math.min(...vals);
+    max = Math.max(...vals);
+  }
   const range = max - min || 1;
   const pad = 4;
 
@@ -1794,8 +1970,13 @@ async function loadHistory(range) {
     const r = await fetch(`/history?time_range=${range}`);
     const d = await r.json();
     const rows = d.rows || [];
-    _drawLineChart('chart-speed', rows.map(r => r.speed), '#40c4ff');
-    _drawLineChart('chart-rpm', rows.map(r => r.rpm), '#00e676');
+    // Speed: convert to the active unit; update the axis caption to match.
+    const speedLabel = document.getElementById('stats-speed-label');
+    if (speedLabel) speedLabel.textContent = `Speed (${speedUnitLabel()})`;
+    _drawLineChart('chart-speed', rows.map(r => speedToUnit(r.speed)), '#40c4ff');
+    // RPM: fixed 0–4000 axis (matches the round-1 red-zone threshold) so the
+    // trace is meaningful and a stray outlier can't flatten it.
+    _drawLineChart('chart-rpm', rows.map(r => r.rpm), '#00e676', { fixedMin: 0, fixedMax: 4000 });
     _drawLineChart('chart-coolant', rows.map(r => r.coolant), '#ffab40');
   } catch (_) {}
 }
@@ -2007,6 +2188,11 @@ function connect() {
     const wotEl = document.getElementById('throttle-cal-wot');
     if (idleEl && settings.throttle_idle) idleEl.textContent = parseFloat(settings.throttle_idle).toFixed(1);
     if (wotEl && settings.throttle_wot) wotEl.textContent = parseFloat(settings.throttle_wot).toFixed(1);
+    // Global speed unit (km/h | mph)
+    if (settings.speed_unit === 'mph' || settings.speed_unit === 'kph') {
+      _speedUnit = settings.speed_unit;
+    }
+    _updateSpeedUnitButtons();
   } catch (_) {}
 
   connect();

@@ -269,7 +269,12 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                             # ── Always: RPM (engine-running, safe) ───────────
                             rpm_p = session.read_local_id_safe(P.PID_RPM)
                             if rpm_p:
-                                last_rpm = round(D.decode_rpm(rpm_p) or 0)
+                                rpm_val = D.decode_rpm(rpm_p)
+                                # decode_rpm returns None for an implausible/garbage
+                                # frame — hold the last good value rather than
+                                # zeroing or latching a corrupt reading.
+                                if rpm_val is not None:
+                                    last_rpm = round(rpm_val)
 
                             # ── Alternate: MAP (health check) / THROTTLE ─────
                             if _map_next:
