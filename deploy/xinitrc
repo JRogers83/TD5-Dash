@@ -21,9 +21,18 @@ case "$_rot" in
 esac
 xrandr --output DSI-2 --rotate "$_xrot" 2>/dev/null || true
 
-# Set root window to black immediately — prevents the default white X
-# background from flashing before Chromium paints.
-xsetroot -solid black 2>/dev/null || true
+# Paint a holding image on the X root before Chromium launches. Without this the
+# root is solid black throughout the up-to-60s /health wait below and Chromium's
+# startup, which reads as the logo "dropping back to black" mid-boot. Show the LR
+# logo (centred on black) via feh so the splash carries through to first paint.
+# Falls back to solid black if feh or the logo is unavailable — i.e. worst case is
+# exactly the previous behaviour, no regression.
+if [ -f "$REPO_DIR/LR-Logo.png" ] && command -v feh >/dev/null 2>&1; then
+    feh --bg-max --image-bg black "$REPO_DIR/LR-Logo.png" 2>/dev/null \
+        || xsetroot -solid black 2>/dev/null || true
+else
+    xsetroot -solid black 2>/dev/null || true
+fi
 
 # Touch coordinate transform is handled by /etc/X11/xorg.conf.d/40-touch-rotation.conf
 # (written by setup.sh based on DISPLAY_ROTATION in .env)

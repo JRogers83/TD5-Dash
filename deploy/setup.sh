@@ -47,6 +47,7 @@ apt-get install -y --no-install-recommends \
     gpsd \
     gpsd-clients \
     python3-gps \
+    feh \
     fonts-noto-color-emoji
 
 # ── GPS (USB receiver via gpsd) ────────────────────────────────────────────────

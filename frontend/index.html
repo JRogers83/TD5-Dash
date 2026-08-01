@@ -8,6 +8,14 @@
 </head>
 <body style="background:#0d0d0d">
 
+  <!-- Boot splash — bridges Chromium startup → first WebSocket data so the
+       screen shows the logo (continuing the feh/Plymouth splash) rather than
+       flashing black. Removed on the first WS connection (see app.js). -->
+  <div id="boot-splash">
+    <img id="boot-splash-logo" src="/LR-Logo.png" alt=""
+         onerror="this.style.display='none'">
+  </div>
+
   <div id="carousel">
     <div id="views">
 
@@ -17,9 +25,11 @@
         <!-- Layer 0: Main Gauges -->
         <div class="layer" data-layer="0">
           <div class="engine-content">
-            <div class="gauge-col"><canvas id="canvas-rpm"      aria-label="Engine RPM"></canvas></div>
-            <div class="gauge-col"><canvas id="canvas-boost"    aria-label="Boost pressure"></canvas></div>
+            <!-- Order (left→right): Throttle, Boost, RPM. RPM sits on the right,
+                 closest to the driver; throttle takes the less-prominent slot. -->
             <div class="gauge-col"><canvas id="canvas-throttle" aria-label="Throttle position"></canvas></div>
+            <div class="gauge-col"><canvas id="canvas-boost"    aria-label="Boost pressure"></canvas></div>
+            <div class="gauge-col"><canvas id="canvas-rpm"      aria-label="Engine RPM"></canvas></div>
 
             <div class="engine-stats">
               <div class="stat-tile">
@@ -340,6 +350,90 @@
 
           </div>
         </div>
+
+        <!-- Layer 1: Victron detailed stats (per-unit) -->
+        <div class="layer" data-layer="1">
+          <div class="victron-detail-content">
+
+            <!-- SmartShunt -->
+            <div class="vdetail-col">
+              <div class="stat-label">Leisure Battery · SmartShunt</div>
+              <div class="stat-grid">
+                <div class="stat-tile">
+                  <div class="stat-label">State of Charge</div>
+                  <div class="stat-value" id="vd-soc">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Voltage</div>
+                  <div class="stat-value" id="vd-voltage">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Current</div>
+                  <div class="stat-value" id="vd-current">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Power</div>
+                  <div class="stat-value" id="vd-power">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Consumed</div>
+                  <div class="stat-value" id="vd-consumed">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Time to Go</div>
+                  <div class="stat-value" id="vd-ttg">—</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vdivider"></div>
+
+            <!-- MPPT solar -->
+            <div class="vdetail-col">
+              <div class="stat-label">Solar · MPPT</div>
+              <div class="stat-grid">
+                <div class="stat-tile">
+                  <div class="stat-label">Charge State</div>
+                  <div class="stat-value" id="vd-solar-state">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Solar Power</div>
+                  <div class="stat-value" id="vd-solar-power">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Yield Today</div>
+                  <div class="stat-value" id="vd-solar-yield">—</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vdivider"></div>
+
+            <!-- Orion XS DC-DC -->
+            <div class="vdetail-col">
+              <div class="stat-label">DC-DC · Orion XS</div>
+              <div class="stat-grid">
+                <div class="stat-tile">
+                  <div class="stat-label">State</div>
+                  <div class="stat-value" id="vd-orion-state">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Alt Voltage</div>
+                  <div class="stat-value" id="vd-orion-in">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Output Voltage</div>
+                  <div class="stat-value" id="vd-orion-out-v">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Output Current</div>
+                  <div class="stat-value" id="vd-orion-out-a">—</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
       </div>
 
       <!-- ── View 3 · Starlink ─────────────────── -->
@@ -418,6 +512,79 @@
 
           </div>
         </div>
+
+        <!-- Layer 1: GPS diagnostics -->
+        <div class="layer" data-layer="1">
+          <div class="gps-content">
+
+            <!-- Fix quality -->
+            <div class="gps-col">
+              <div class="stat-label">GPS Fix</div>
+              <div class="stat-tile">
+                <div class="stat-label">Status</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="gps-fix-txt">No Fix</div>
+                  <div class="status-dot" id="gps-fix-dot"></div>
+                </div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Satellites</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="gps-sats">—</div>
+                  <div class="status-dot" id="gps-sats-dot"></div>
+                </div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Accuracy · HDOP</div>
+                <div class="engine-stat-bottom">
+                  <div class="stat-value" id="gps-hdop">—</div>
+                  <div class="status-dot" id="gps-hdop-dot"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vdivider"></div>
+
+            <!-- Live position -->
+            <div class="gps-col">
+              <div class="stat-label">Position</div>
+              <div class="stat-grid">
+                <div class="stat-tile">
+                  <div class="stat-label">Latitude</div>
+                  <div class="stat-value" id="gps-lat">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Longitude</div>
+                  <div class="stat-value" id="gps-lon">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Speed</div>
+                  <div class="stat-value" id="gps-speed">—</div>
+                </div>
+                <div class="stat-tile">
+                  <div class="stat-label">Heading</div>
+                  <div class="stat-value" id="gps-heading">—</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vdivider"></div>
+
+            <!-- Last known good -->
+            <div class="gps-col">
+              <div class="stat-label">Last Known Fix</div>
+              <div class="stat-tile">
+                <div class="stat-label">Position</div>
+                <div class="stat-value gps-lastfix" id="gps-last-pos">—</div>
+              </div>
+              <div class="stat-tile">
+                <div class="stat-label">Fix Time</div>
+                <div class="stat-value" id="gps-last-time">—</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
       </div>
 
       <!-- ── View 4 · Settings ──────────────────── -->
@@ -464,6 +631,13 @@
                   <div class="engine-stat-bottom">
                     <div class="stat-value" id="txt-starlink">—</div>
                     <div class="status-dot" id="dot-starlink"></div>
+                  </div>
+                </div>
+                <div class="stat-tile settings-conn-tile">
+                  <div class="stat-label">GPS</div>
+                  <div class="engine-stat-bottom">
+                    <div class="stat-value" id="txt-gps-conn">No Fix</div>
+                    <div class="status-dot" id="dot-gps-conn"></div>
                   </div>
                 </div>
               </div>
@@ -550,15 +724,6 @@
                 <span class="relay-btn__label">Play Doom</span>
               </button>
 
-              <div class="stat-label settings-lower-label">Software</div>
-              <button class="relay-btn" id="btn-update" onclick="triggerUpdate()">
-                <span class="relay-btn__label" id="lbl-update">Check for Updates</span>
-              </button>
-              <button class="relay-btn" id="btn-rollback" onclick="triggerRollback()" disabled>
-                <span class="relay-btn__label" id="lbl-rollback">Roll Back</span>
-              </button>
-              <div class="update-status" id="update-status"></div>
-
               <div class="stat-label settings-lower-label">Pi Health</div>
               <div class="settings-sys-grid">
                 <div class="stat-tile settings-sys-tile">
@@ -578,8 +743,34 @@
           </div>
         </div>
 
-        <!-- Layer 1: Pages (always present, not toggleable) -->
+        <!-- Layer 1: Software (OTA update & rollback) -->
         <div class="layer" data-layer="1">
+          <div class="software-content">
+            <div class="software-panel">
+              <div class="software-title">Software</div>
+              <div class="software-version-row">
+                <span class="software-version-label">Current Version</span>
+                <span class="software-version" id="txt-version">—</span>
+              </div>
+              <p class="software-help">
+                <b>Check for Updates</b> pulls the latest code and restarts the dash.
+                <b>Roll Back</b> reverts the most recent update if something isn't right.
+              </p>
+              <div class="software-actions">
+                <button class="relay-btn relay-btn--primary" id="btn-update" onclick="triggerUpdate()">
+                  <span class="relay-btn__label" id="lbl-update">Check for Updates</span>
+                </button>
+                <button class="relay-btn" id="btn-rollback" onclick="triggerRollback()" disabled>
+                  <span class="relay-btn__label" id="lbl-rollback">Roll Back</span>
+                </button>
+              </div>
+              <div class="update-status" id="update-status"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Layer 2: Pages (always present, not toggleable) -->
+        <div class="layer" data-layer="2">
           <div class="pages-content">
             <div class="pages-header">
               <div class="stat-label">Page Visibility</div>
@@ -592,8 +783,8 @@
           </div>
         </div>
 
-        <!-- Layer 2: Setup wizard (always present, not toggleable) -->
-        <div class="layer" data-layer="2">
+        <!-- Layer 3: Setup wizard (always present, not toggleable) -->
+        <div class="layer" data-layer="3">
           <div class="wizard-content" id="setup-wizard">
             <div class="wizard-header">
               <div class="stat-label">Setup</div>
@@ -642,8 +833,8 @@
           </div>
         </div>
 
-        <!-- Layer 3: Diagnostics (toggleable, off by default) -->
-        <div class="layer" data-layer="3" data-page="settings_diagnostics">
+        <!-- Layer 4: Diagnostics (toggleable, off by default) -->
+        <div class="layer" data-layer="4" data-page="settings_diagnostics">
           <div class="diag-content">
             <div class="diag-section">
               <div class="stat-label">Service Health</div>

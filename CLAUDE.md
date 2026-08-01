@@ -113,11 +113,11 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 
 ```json
 {"type": "engine",   "data": {"rpm": 0, "coolant_temp_c": 0, "boost_bar": 0, "throttle_pct": 0, "throttle_raw_pct": 0, "battery_v": 0, "inlet_air_temp_c": 0, "external_temp_c": 0, "fuel_temp_c": 0, "road_speed_kph": 0, "fault_codes": [{"code": "4-6", "description": "Ambient air temperature circuit (L)", "count": 187, "expected": true}]}}
-{"type": "victron",  "data": {"soc_pct": 0, "voltage_v": 0, "current_a": 0, "solar_yield_wh": 0, "charge_state": "", "orion_state": "", "orion_input_v": 0}}
+{"type": "victron",  "data": {"soc_pct": 0, "voltage_v": 0, "current_a": 0, "consumed_ah": null, "time_to_go_min": null, "solar_yield_wh": 0, "solar_power_w": 0, "charge_state": "", "orion_state": "", "orion_input_v": 0, "orion_output_v": 0, "orion_output_a": 0}}
 {"type": "spotify",  "data": {"connected": false, "playing": false, "error": false, "auth_required": false, "track": "", "artist": "", "album": "", "album_art_url": null, "progress_s": 0, "duration_s": 0, "device_name": "", "track_id": "", "liked": false}}
 {"type": "weather",  "data": {"current": {"temp_c": 0, "humidity_pct": 0, "weather_code": 0, "wind_kph": 0}, "forecast": [], "location": "", "stale": false}}
 {"type": "starlink", "data": {"state": "offline", "down_mbps": 0, "up_mbps": 0, "latency_ms": 0, "ping_drop_pct": 0, "obstructed": false, "obstruction_pct": 0, "roaming": false, "uptime_s": 0, "alerts": []}}
-{"type": "gps",      "data": {"lat": 0, "lon": 0, "alt": 0}}
+{"type": "gps",      "data": {"lat": 0, "lon": 0, "speed_kmh": 0, "heading_deg": 0, "fix": 0, "satellites_used": 0, "satellites_visible": 0, "hdop": null}}
 {"type": "system",   "data": {"brightness": 0, "cpu_temp_c": 0, "cpu_load_pct": 0, "ram_usage_pct": 0, "disk_usage_pct": 0, "uptime_s": 0, "throttled": false, "wifi_connected": false, "bt_connected": false, "override_mode": false, "sidelights": false}}
 ```
 

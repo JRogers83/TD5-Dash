@@ -12,11 +12,18 @@ Configuration:
 
 WebSocket message published when fix available:
   {"type": "gps", "data": {"lat": 52.6309, "lon": 1.2974,
-                            "speed_kmh": 0.0, "heading_deg": 0.0, "fix": 3}}
+                            "speed_kmh": 0.0, "heading_deg": 0.0, "fix": 3,
+                            "satellites_used": 9, "satellites_visible": 12,
+                            "hdop": 0.9}}
 
 WebSocket message when no fix:
   {"type": "gps", "data": {"lat": null, "lon": null,
-                            "speed_kmh": null, "heading_deg": null, "fix": 0}}
+                            "speed_kmh": null, "heading_deg": null, "fix": 0,
+                            "satellites_used": 0, "satellites_visible": 0,
+                            "hdop": null}}
+
+Satellite counts and HDOP come from gpsd SKY reports (separate from the TPV
+position reports) and are merged into each broadcast.
 
 # hw-verify: /dev/ttyACM0 device path and gpsd auto-detection of u-blox
 # UBX-G7020-KT must be confirmed on real hardware (see documentation/pi-setup.md).
@@ -40,11 +47,14 @@ _RETRY_MIN_S = 5.0
 _RETRY_MAX_S = 60.0
 
 _NO_FIX_DATA: dict = {
-    "lat":         None,
-    "lon":         None,
-    "speed_kmh":   None,
-    "heading_deg": None,
-    "fix":         0,
+    "lat":                None,
+    "lon":                None,
+    "speed_kmh":          None,
+    "heading_deg":        None,
+    "fix":                0,
+    "satellites_used":    0,
+    "satellites_visible": 0,
+    "hdop":               None,
 }
 
 
@@ -69,6 +79,30 @@ def _parse_tpv(report) -> dict | None:
         "speed_kmh":   round(float(report.get('speed', 0.0) or 0.0) * 3.6, 1),
         "heading_deg": round(float(report.get('track', 0.0) or 0.0), 1),
         "fix":         mode,
+    }
+
+
+def _parse_sky(report) -> dict:
+    """
+    Parse a gpsd SKY report into satellite-count / accuracy fields.
+
+    SKY reports arrive separately from TPV and describe the satellites in view.
+    Each entry in `satellites` has a `used` flag; gpsd may also provide the
+    pre-counted `uSat`/`nSat` (used / seen) and `hdop`. Fall back to counting
+    the satellite list when the count fields are absent.
+    """
+    sats = report.get('satellites') or []
+    used = report.get('uSat')
+    seen = report.get('nSat')
+    if used is None:
+        used = sum(1 for s in sats if (s.get('used') if isinstance(s, dict) else getattr(s, 'used', False)))
+    if seen is None:
+        seen = len(sats)
+    hdop = report.get('hdop')
+    return {
+        "satellites_used":    int(used or 0),
+        "satellites_visible": int(seen or 0),
+        "hdop":               round(float(hdop), 1) if hdop is not None else None,
     }
 
 
@@ -100,6 +134,11 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
             log.info("gpsd connected. Polling for GPS fix.")
             retry_delay = _RETRY_MIN_S
 
+            # Merged view of the latest position (TPV) and satellite info (SKY),
+            # which gpsd sends as separate reports. We keep the satellite counts
+            # across TPV updates and vice-versa so each broadcast is complete.
+            state = {**_NO_FIX_DATA}
+
             buf = ""
             while True:
                 chunk = sock.recv(4096).decode("utf-8", errors="replace")
@@ -115,19 +154,32 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                         report = _json.loads(line)
                     except _json.JSONDecodeError:
                         continue
-                    if report.get("class") != "TPV":
+
+                    cls = report.get("class")
+                    if cls == "SKY":
+                        state.update(_parse_sky(report))
+                        _broadcast({**state})
+                        continue
+                    if cls != "TPV":
                         continue
 
                     data = _parse_tpv(report)
                     if data is None:
-                        _broadcast({**_NO_FIX_DATA})
+                        # Lost fix — keep satellite counts (still tracking sats),
+                        # but clear position.
+                        state.update({
+                            "lat": None, "lon": None,
+                            "speed_kmh": None, "heading_deg": None, "fix": 0,
+                        })
+                        _broadcast({**state})
                         shared_state.gps_lat         = None
                         shared_state.gps_lon         = None
                         shared_state.gps_speed_kmh   = None
                         shared_state.gps_heading_deg = None
                         shared_state.gps_fix         = 0
                     else:
-                        _broadcast(data)
+                        state.update(data)
+                        _broadcast({**state})
                         shared_state.gps_lat         = data["lat"]
                         shared_state.gps_lon         = data["lon"]
                         shared_state.gps_speed_kmh   = data["speed_kmh"]

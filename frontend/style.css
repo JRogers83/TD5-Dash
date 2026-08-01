@@ -163,9 +163,14 @@ html, body {
   color: var(--text-muted);
 }
 
-/* Engine screen (layer 0) — muted grey labels were hard to read in sunlight;
-   scoped here rather than changing --text-muted globally. */
-.engine-content .stat-label {
+/* Muted grey labels were hard to read in sunlight; brighten them to the primary
+   text colour on the data-dense screens. Scoped per-view rather than changing
+   --text-muted globally so intentionally-dim UI elsewhere is unaffected. */
+.engine-content .stat-label,
+.victron-content .stat-label,
+.victron-detail-content .stat-label,
+.gps-content .stat-label,
+#view-settings .stat-label {
   color: var(--text);
 }
 
@@ -209,7 +214,7 @@ html, body {
 
 .g-unit {
   font-size: 20px;
-  fill: var(--text-muted);
+  fill: var(--text);
   text-anchor: middle;
   dominant-baseline: middle;
   letter-spacing: 0.06em;
@@ -218,7 +223,7 @@ html, body {
 
 .g-label {
   font-size: 20px;
-  fill: var(--text-muted);
+  fill: var(--text);
   text-anchor: middle;
   dominant-baseline: middle;
   letter-spacing: 0.06em;
@@ -359,7 +364,7 @@ html, body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--text-muted);
+  color: var(--text);
   cursor: pointer;
   transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
@@ -383,7 +388,7 @@ html, body {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 .bright-control {
@@ -430,14 +435,14 @@ html, body {
 /* ── OTA update status ────────────────────────── */
 .update-status {
   font-size: 16px;
-  color: var(--text-dim);
+  color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
   min-height: 0;
 }
 
 .update-status--ok {
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 /* ── Relay (amplifier) toggle ─────────────────── */
@@ -451,7 +456,7 @@ html, body {
   background: var(--surface);
   border: 2px solid var(--border);
   border-radius: 8px;
-  color: var(--text-muted);
+  color: var(--text);
   cursor: pointer;
   transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
@@ -478,6 +483,115 @@ html, body {
   border-color: var(--c-red);
 }
 .relay-btn--danger .relay-btn__label { color: var(--c-red); }
+
+/* ── Victron detailed stats layer ──────────────── */
+.victron-detail-content {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  padding: 10px 16px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.vdetail-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── GPS diagnostics layer ─────────────────────── */
+.gps-content {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  padding: 10px 16px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.gps-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Coordinates are long — let them shrink to fit the tile */
+.gps-lastfix {
+  font-size: 22px;
+  word-break: break-all;
+}
+
+/* ── Software (OTA update) layer ───────────────── */
+.software-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 24px;
+}
+
+.software-panel {
+  width: 100%;
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.software-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.software-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.software-version-label {
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.software-version {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.software-help {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.software-help b { font-weight: 700; }
+
+.software-actions {
+  display: flex;
+  gap: 14px;
+}
+
+.software-actions .relay-btn { flex: 1; }
 
 .status-item {
   display: flex;
@@ -823,25 +937,26 @@ html, body {
   position: relative;
 }
 
-/* Playlist grid — horizontal scroll */
+/* Playlist grid — wraps into rows and scrolls VERTICALLY. Horizontal scrolling
+   fought with the carousel swipe (and only ever showed the first ~5 playlists);
+   vertical scroll matches the working track list and reveals the whole library. */
 .sp-pl-list {
-  display: flex;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  align-content: start;
   gap: 12px;
   padding: 12px 16px;
   height: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  touch-action: pan-x;
+  touch-action: pan-y;
 }
 
 .sp-pl-list::-webkit-scrollbar { display: none; }
 
 .sp-pl-card {
-  flex-shrink: 0;
-  width: 220px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -851,7 +966,6 @@ html, body {
   border-radius: 8px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  align-self: flex-start;
 }
 
 .sp-pl-card:active {
@@ -1088,7 +1202,7 @@ html, body {
   font-size: 20px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 .wx-loading {
@@ -1151,7 +1265,7 @@ html, body {
   display: flex;
   gap: 16px;
   font-size: 20px;
-  color: var(--text-muted);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1909,4 +2023,28 @@ html, body {
   font-size: 13px;
   letter-spacing: 0.15em;
   text-transform: uppercase;
+}
+
+/* ── Boot splash ───────────────────────────────── */
+#boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #0d0d0d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.5s ease;
+}
+
+#boot-splash-logo {
+  max-width: 55%;
+  max-height: 70%;
+  object-fit: contain;
+}
+
+/* Fade out, then display:none removes it from the tree (JS drops it after). */
+#boot-splash.boot-splash--hidden {
+  opacity: 0;
+  pointer-events: none;
 }

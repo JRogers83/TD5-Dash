@@ -81,6 +81,34 @@ class TestParseTpv:
         assert result["speed_kmh"] == round(13.8888 * 3.6, 1)
 
 
+class TestParseSky:
+    def test_uses_explicit_counts_and_hdop(self):
+        from gps_service import _parse_sky
+        result = _parse_sky({"uSat": 9, "nSat": 12, "hdop": 0.87})
+        assert result["satellites_used"] == 9
+        assert result["satellites_visible"] == 12
+        assert result["hdop"] == 0.9
+
+    def test_counts_satellites_list_when_counts_absent(self):
+        from gps_service import _parse_sky
+        sats = [
+            {"PRN": 1, "used": True},
+            {"PRN": 2, "used": True},
+            {"PRN": 3, "used": False},
+            {"PRN": 4, "used": True},
+        ]
+        result = _parse_sky({"satellites": sats})
+        assert result["satellites_used"] == 3
+        assert result["satellites_visible"] == 4
+
+    def test_empty_report_yields_zero_and_none_hdop(self):
+        from gps_service import _parse_sky
+        result = _parse_sky({})
+        assert result["satellites_used"] == 0
+        assert result["satellites_visible"] == 0
+        assert result["hdop"] is None
+
+
 class TestNoFixData:
     def test_all_numeric_fields_are_none(self):
         from gps_service import _NO_FIX_DATA
@@ -92,3 +120,9 @@ class TestNoFixData:
     def test_fix_is_zero(self):
         from gps_service import _NO_FIX_DATA
         assert _NO_FIX_DATA["fix"] == 0
+
+    def test_satellite_fields_present_and_zeroed(self):
+        from gps_service import _NO_FIX_DATA
+        assert _NO_FIX_DATA["satellites_used"] == 0
+        assert _NO_FIX_DATA["satellites_visible"] == 0
+        assert _NO_FIX_DATA["hdop"] is None

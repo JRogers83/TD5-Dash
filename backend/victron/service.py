@@ -80,10 +80,15 @@ async def _scan_and_publish(manager: ConnectionManager) -> None:
                     "soc_pct":        state.soc_pct,
                     "voltage_v":      state.voltage_v,
                     "current_a":      state.current_a,
+                    "consumed_ah":    state.consumed_ah,
+                    "time_to_go_min": state.time_to_go_min,
                     "solar_yield_wh": state.solar_yield_wh,
+                    "solar_power_w":  state.solar_power_w,
                     "charge_state":   state.charge_state,
                     "orion_state":    state.orion_state,
                     "orion_input_v":  state.orion_input_v,
+                    "orion_output_v": state.orion_output_v,
+                    "orion_output_a": state.orion_output_a,
                 },
             }
             await manager.broadcast(payload)

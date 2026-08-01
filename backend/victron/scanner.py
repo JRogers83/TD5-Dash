@@ -81,14 +81,19 @@ class VictronState:
     soc_pct:        float = 0.0
     voltage_v:      float = 0.0
     current_a:      float = 0.0
+    consumed_ah:    Optional[float] = None   # amp-hours drawn since full
+    time_to_go_min: Optional[int]   = None   # estimated runtime at current draw
 
     # MPPT
-    solar_yield_wh: float = 0.0    # stored as Wh (victron-ble gives kWh — converted)
+    solar_yield_wh: float = 0.0    # stored as Wh (victron-ble already returns Wh)
+    solar_power_w:  float = 0.0    # instantaneous PV power
     charge_state:   str   = "off"
 
     # Orion XS DC-DC charger
     orion_state:    str   = "off"  # off / bulk / absorption / float / fault
     orion_input_v:  float = 0.0    # vehicle / alternator voltage
+    orion_output_v: float = 0.0    # leisure-side output voltage
+    orion_output_a: float = 0.0    # charging current to leisure battery
 
     # Timestamps of last update — used to detect stale data (device out of range).
     shunt_updated:  float = field(default=0.0, repr=False)
@@ -103,6 +108,23 @@ class VictronState:
             (now - self.mppt_updated)  < max_age_s and
             (now - self.orion_updated) < max_age_s
         )
+
+
+def _get(parsed, name):
+    """
+    Call parsed.<name>() defensively.
+
+    victron-ble exposes different getters across versions/device types, and a
+    missing getter raises AttributeError. This returns the value or None without
+    letting an absent/optional field abort decoding of the required ones.
+    """
+    fn = getattr(parsed, name, None)
+    if not callable(fn):
+        return None
+    try:
+        return fn()
+    except Exception:
+        return None
 
 
 # ── Advertisement handler ──────────────────────────────────────────────────────
@@ -224,6 +246,17 @@ class VictronScanner:
             if voltage is not None: self._state.voltage_v = round(voltage, 2)
             if current is not None: self._state.current_a = round(current, 2)
 
+            # Optional extended fields (present depending on victron-ble version)
+            consumed = _get(parsed, "get_consumed_ah")
+            if consumed is not None:
+                self._state.consumed_ah = round(consumed, 1)
+            ttg = _get(parsed, "get_remaining_mins")
+            # victron-ble reports a sentinel (very large) when not discharging.
+            if ttg is not None and ttg < 0xFFFE:
+                self._state.time_to_go_min = int(ttg)
+            else:
+                self._state.time_to_go_min = None
+
             self._state.shunt_updated = time.monotonic()
             log.debug("Shunt: SoC=%.1f%% V=%.2fV I=%.2fA", soc, voltage, current)
 
@@ -236,18 +269,25 @@ class VictronScanner:
 
         victron-ble SolarChargerData API (verified against 0.9.3):
           parsed.get_charge_state()  → ChargeState enum | None
-          parsed.get_yield_today()   → float | None  (kWh — converted to Wh below)
+          parsed.get_yield_today()   → float | None  (Wh — already scaled by the library)
           parsed.get_solar_power()   → float | None  (W, useful for future display)
 
         Note: get_device_state() was renamed to get_charge_state() in victron-ble 0.9.x.
-        yield_today units confirmed as kWh in 0.9.3.
+        yield_today is returned in Wh — the library already scales the raw 0.01 kWh
+        BLE field up to Wh, so no further ×1000 conversion is applied here. (An earlier
+        version wrongly assumed kWh and multiplied by 1000, inflating e.g. 160 Wh to
+        160,000 Wh; confirmed against the VictronConnect app reading.)
         """
         try:
             state_enum  = parsed.get_charge_state()
-            yield_today = parsed.get_yield_today()     # kWh from library
+            yield_today = parsed.get_yield_today()     # Wh from library
 
             if yield_today is not None:
-                self._state.solar_yield_wh = round(yield_today * 1000)  # kWh → Wh
+                self._state.solar_yield_wh = round(yield_today)
+
+            solar_power = _get(parsed, "get_solar_power")
+            if solar_power is not None:
+                self._state.solar_power_w = round(solar_power)
 
             if state_enum is not None:
                 state_int = state_enum.value if hasattr(state_enum, 'value') else int(state_enum)
@@ -283,6 +323,13 @@ class VictronScanner:
 
             if input_v is not None:
                 self._state.orion_input_v = round(input_v, 1)
+
+            output_v = _get(parsed, "get_output_voltage")
+            if output_v is not None:
+                self._state.orion_output_v = round(output_v, 1)
+            output_a = _get(parsed, "get_output_current")
+            if output_a is not None:
+                self._state.orion_output_a = round(output_a, 1)
 
             self._state.orion_updated = time.monotonic()
             log.debug(

@@ -75,10 +75,18 @@ const rpmGauge = new RadialGauge(Object.assign({}, CLASSIC, FONTS, {
   fontNumbersSize: Math.round(42 * GAUGE_SIZE / 290),
   fontUnitsSize:   Math.round(36 * GAUGE_SIZE / 290),
   numbersMargin:   4,
+  // Zones (TD5, owner/forum consensus — no factory redline marked):
+  //   green  idle–3000  normal low-rev torque band + cruising
+  //   amber  3000–4000  caution
+  //   red    4000+      approaching governed/rev-limiter range (~4200–4500)
+  // Red is made deliberately prominent (higher opacity + wider band) so it
+  // reads at a glance while driving.
   highlights: [
-    { from: 4500, to: 5000, color: 'rgba(255, 82, 82, 0.35)' },
+    { from: 0,    to: 3000, color: 'rgba(0, 230, 118, 0.18)' },
+    { from: 3000, to: 4000, color: 'rgba(255, 171, 64, 0.38)' },
+    { from: 4000, to: 5000, color: 'rgba(255, 82, 82, 0.60)' },
   ],
-  highlightsWidth: 10,
+  highlightsWidth: 14,
 })).draw();
 
 // Boost — 0-2.5 bar
@@ -118,14 +126,25 @@ const throttleGauge = new RadialGauge(Object.assign({}, CLASSIC, FONTS, {
 })).draw();
 
 // ── Engine stat dot colours ────────────────────
-// Battery voltage: red < 12.0, amber 12.0–12.5 or > 14.8, green otherwise
+// Canonical thresholds for the Engine-view status dots. Rationale and sources
+// are documented in documentation/engine-status-thresholds.md — keep the two in
+// sync. Dot meanings: blue=cold/informational, green(on)=normal, amber(warn)=
+// elevated/keep an eye, red=genuinely worth attention.
+
+// Battery/system voltage (V):
+//   red  < 12.0  flat/failing battery
+//   amber 12.0–12.5 low at rest, or > 14.8 over-charging
+//   green otherwise (12.5 rest → ~13.8–14.4 charging is all normal)
 function batteryColor(v) {
   if (v < 12.0) return 'red';
   if (v < 12.5 || v > 14.8) return 'warn';
   return 'on';
 }
 
-// Coolant °C (TD5 thermostat opens ~82°C, normal 85–95°C)
+// Coolant °C — TD5 thermostat opens ~82°C, normal running ~85–95°C, fan/warning
+// territory above ~105°C:
+//   blue < 60 (not warmed up)   green 60–95 (normal)
+//   amber 95–105 (hot)          red ≥ 105 (overheating — genuine concern)
 function coolantColor(c) {
   if (c < 60)  return 'blue';
   if (c < 95)  return 'on';
@@ -133,19 +152,29 @@ function coolantColor(c) {
   return 'red';
 }
 
-// Inlet air temp — high temps indicate intercooler stress
+// Inlet air temp °C — this is the combined MAP/IAT sensor on the inlet manifold,
+// i.e. CHARGE-AIR temperature POST-turbo and POST-intercooler, not ambient. It
+// normally sits at ambient +20–30°C and climbs well beyond that under boost on a
+// warm day, so mid-range readings (e.g. 60°C) are completely normal and NOT a
+// fault. Only sustained very high charge temps (poor intercooling) are worth
+// flagging, and even then it is an efficiency/power note, not an emergency:
+//   blue < 0 (sub-zero intake)  green 0–70 (normal, incl. boost on a warm day)
+//   amber 70–90 (working hard / very hot ambient)   red ≥ 90 (charge air very hot)
+// (Previously red at ≥60°C, which lit up under ordinary summer driving.)
 function airTempColor(c) {
-  if (c < 5)  return 'blue';
-  if (c < 40) return 'on';
-  if (c < 60) return 'warn';
+  if (c < 0)  return 'blue';
+  if (c < 70) return 'on';
+  if (c < 90) return 'warn';
   return 'red';
 }
 
-// Fuel temp — elevated temps risk vapour lock on the TD5 high-pressure system
+// Fuel temp °C — TD5 return-fed fuel warms with use; 40–65°C is common in normal
+// running and higher under sustained load:
+//   blue < 15   green 15–65   amber 65–80   red ≥ 80
 function fuelTempColor(c) {
   if (c < 15) return 'blue';
-  if (c < 50) return 'on';
-  if (c < 65) return 'warn';
+  if (c < 65) return 'on';
+  if (c < 80) return 'warn';
   return 'red';
 }
 
@@ -527,6 +556,46 @@ function handleVictron(d) {
   document.getElementById('txt-orion-state').textContent = orion.label;
   document.getElementById('txt-orion-input').textContent =
     d.orion_input_v > 0 ? `${d.orion_input_v.toFixed(1)} V` : '— V';
+
+  _renderVictronDetail(d, state, orion);
+}
+
+// Detailed per-unit Victron layer (Victron view, layer 1)
+function _renderVictronDetail(d, chargeState, orion) {
+  const setTxt = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v;
+  };
+  const sign = (n) => (n > 0 ? '+' : '');
+
+  // SmartShunt
+  setTxt('vd-soc', `${Math.round(d.soc_pct)} %`);
+  setTxt('vd-voltage', `${d.voltage_v.toFixed(2)} V`);
+  setTxt('vd-current', `${sign(d.current_a)}${d.current_a.toFixed(1)} A`);
+  const power = d.voltage_v * d.current_a;
+  setTxt('vd-power', `${sign(power)}${Math.round(power)} W`);
+  setTxt('vd-consumed', d.consumed_ah != null ? `${d.consumed_ah.toFixed(1)} Ah` : '—');
+  setTxt('vd-ttg', _fmtTimeToGo(d.time_to_go_min, d.current_a));
+
+  // MPPT solar
+  setTxt('vd-solar-state', (CHARGE_STATE_LABELS[d.charge_state] ?? { label: d.charge_state }).label);
+  setTxt('vd-solar-power', d.solar_power_w != null ? `${Math.round(d.solar_power_w)} W` : '—');
+  setTxt('vd-solar-yield', `${d.solar_yield_wh} Wh`);
+
+  // Orion XS DC-DC
+  setTxt('vd-orion-state', orion.label);
+  setTxt('vd-orion-in', d.orion_input_v > 0 ? `${d.orion_input_v.toFixed(1)} V` : '—');
+  setTxt('vd-orion-out-v', d.orion_output_v > 0 ? `${d.orion_output_v.toFixed(1)} V` : '—');
+  setTxt('vd-orion-out-a', d.orion_output_a != null ? `${d.orion_output_a.toFixed(1)} A` : '—');
+}
+
+// Time-to-go: null means "not discharging" (charging/idle) → show ∞ when actually
+// charging, otherwise a dash. Minutes are shown as e.g. "2d 7h", "31 h", or "45 m".
+function _fmtTimeToGo(mins, current) {
+  if (mins == null) return (typeof current === 'number' && current >= 0) ? '∞' : '—';
+  if (mins >= 1440) return `${Math.floor(mins / 1440)}d ${Math.floor((mins % 1440) / 60)}h`;
+  if (mins >= 60)   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  return `${mins} m`;
 }
 
 // ── Weather data handler ───────────────────────
@@ -700,12 +769,58 @@ function handleStarlink(d) {
   settingsTxt.textContent = state.label;
 }
 
+let _gpsLastFix = null;   // {lat, lon, t} — last position with a valid fix
+
 function handleGps(d) {
-  // Show a simple GPS Active indicator — coordinates are not useful on the display.
-  const hasfix = d.lat !== 0 || d.lon !== 0;
-  document.getElementById('sl-gps-dot').className =
-    `status-dot ${hasfix ? 'on' : 'off'}`;
-  document.getElementById('sl-gps').textContent = hasfix ? 'Active' : 'No Fix';
+  const setTxt = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v;
+  };
+
+  // Prefer the explicit fix quality (0=no data/no fix, 2=2D, 3=3D); fall back to
+  // coordinate presence. Guard against null coords: `null !== 0` is truthy, which
+  // previously made "No Fix" impossible to display.
+  const fix = (typeof d.fix === 'number') ? d.fix : 0;
+  const hasfix = (typeof d.fix === 'number')
+    ? fix >= 2
+    : (d.lat != null && d.lon != null && (d.lat !== 0 || d.lon !== 0));
+
+  // Starlink-view summary indicator + Settings connectivity tile
+  document.getElementById('sl-gps-dot').className = `status-dot ${hasfix ? 'on' : 'off'}`;
+  setTxt('sl-gps', hasfix ? 'Active' : 'No Fix');
+  const connDot = document.getElementById('dot-gps-conn');
+  if (connDot) connDot.className = `status-dot ${hasfix ? 'on' : 'off'}`;
+  setTxt('txt-gps-conn', hasfix ? 'Active' : 'No Fix');
+
+  // ── GPS diagnostics layer ──────────────────────
+  const fixTxt = fix >= 3 ? '3D Fix' : fix === 2 ? '2D Fix' : 'No Fix';
+  setTxt('gps-fix-txt', fixTxt);
+  setStatDot('gps-fix-dot', fix >= 3 ? 'on' : fix === 2 ? 'warn' : 'off');
+
+  const used = d.satellites_used ?? 0;
+  const vis  = d.satellites_visible ?? 0;
+  setTxt('gps-sats', (used || vis) ? `${used} / ${vis}` : '—');
+  // 4 satellites is the minimum for a 3D fix; below that is weak.
+  setStatDot('gps-sats-dot', used >= 5 ? 'on' : used >= 4 ? 'warn' : used > 0 ? 'red' : 'off');
+
+  const hdop = d.hdop;
+  setTxt('gps-hdop', hdop != null ? hdop.toFixed(1) : '—');
+  // HDOP: ≤2 excellent/good, ≤5 moderate, >5 poor.
+  setStatDot('gps-hdop-dot', hdop == null ? 'off' : hdop <= 2 ? 'on' : hdop <= 5 ? 'warn' : 'red');
+
+  setTxt('gps-lat', d.lat != null ? `${d.lat.toFixed(5)}°` : '—');
+  setTxt('gps-lon', d.lon != null ? `${d.lon.toFixed(5)}°` : '—');
+  setTxt('gps-speed', d.speed_kmh != null ? `${Math.round(d.speed_kmh)} km/h` : '—');
+  setTxt('gps-heading', d.heading_deg != null ? `${Math.round(d.heading_deg)}°` : '—');
+
+  // Track last-known-good position (persists across fix loss)
+  if (hasfix && d.lat != null && d.lon != null) {
+    _gpsLastFix = { lat: d.lat, lon: d.lon, t: Date.now() };
+  }
+  if (_gpsLastFix) {
+    setTxt('gps-last-pos', `${_gpsLastFix.lat.toFixed(5)}, ${_gpsLastFix.lon.toFixed(5)}`);
+    setTxt('gps-last-time', new Date(_gpsLastFix.t).toLocaleTimeString());
+  }
 }
 
 // ── System data handler ────────────────────────
@@ -915,6 +1030,8 @@ async function refreshVersionInfo() {
     const r    = await fetch('/system/version');
     const data = await r.json();
     _setRollbackButton(data.rollback_target);
+    const ver = document.getElementById('txt-version');
+    if (ver && data.current_version) ver.textContent = data.current_version;
   } catch (_) {
     // Backend not reachable yet (e.g. mid-restart) — leave button as-is.
   }
@@ -1154,6 +1271,7 @@ const NAV = (() => {
     const enabled = enabledLayers[curView];
     curLayer[curView] = enabled.indexOf(targetLayerDomIdx);
     _updateIndicator();
+    _onLayerEntered(curView, targetLayerDomIdx);
 
     const leaving = currEl;
     setTimeout(() => {
@@ -1187,6 +1305,17 @@ const NAV = (() => {
 
   function _updateIndicator() {
     // No-op — nav dots removed per user preference
+  }
+
+  // Called whenever a layer becomes the active layer (via swipe or navigateTo).
+  function _onLayerEntered(viewIdx, layerDomIdx) {
+    // Engine view (0) → Engine Stats layer (2): auto-load the history charts on
+    // entry so they populate immediately instead of staying blank until the user
+    // manually changes the time range.
+    if (viewIdx === 0 && layerDomIdx === 2 && typeof loadHistory === 'function') {
+      const active = document.querySelector('.stats-range-btn--active');
+      loadHistory(active ? active.dataset.range : 'hour');
+    }
   }
 
   return {
@@ -1783,6 +1912,19 @@ function setConnState(cls, label) {
 
 let _wsEverConnected = false;
 
+// Fade out and remove the boot splash. Safe to call more than once.
+let _bootSplashGone = false;
+function _dismissBootSplash() {
+  if (_bootSplashGone) return;
+  _bootSplashGone = true;
+  const el = document.getElementById('boot-splash');
+  if (!el) return;
+  el.classList.add('boot-splash--hidden');
+  setTimeout(() => el.remove(), 600);
+}
+// Safety net: if the WebSocket never connects, don't leave the splash up forever.
+setTimeout(_dismissBootSplash, 15000);
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const ws    = new WebSocket(`${proto}//${location.host}/ws`);
@@ -1797,6 +1939,7 @@ function connect() {
     _wsEverConnected = true;
     setConnState('connected', 'Online');
     document.dispatchEvent(new CustomEvent('td5-ws-connected'));
+    _dismissBootSplash();
   };
 
   ws.onmessage = e => {
