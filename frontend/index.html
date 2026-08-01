@@ -16,6 +16,24 @@
          onerror="this.style.display='none'">
   </div>
 
+  <!-- Fault-code library detail (opened by tapping a fault code) -->
+  <div id="dtc-detail" class="dtc-detail-overlay" style="display:none">
+    <div class="dtc-detail-card">
+      <div class="dtc-detail-hdr">
+        <span class="dtc-detail-code" id="dtc-detail-code">—</span>
+        <span class="dtc-detail-severity" id="dtc-detail-severity"></span>
+      </div>
+      <div class="dtc-detail-desc" id="dtc-detail-desc"></div>
+      <div class="dtc-detail-expl" id="dtc-detail-expl"></div>
+      <div class="dtc-detail-causes-label">Likely causes</div>
+      <ul class="dtc-detail-causes" id="dtc-detail-causes"></ul>
+      <div class="dtc-detail-note" id="dtc-detail-note"></div>
+      <button class="relay-btn dtc-detail-close" id="dtc-detail-close">
+        <span class="relay-btn__label">Close</span>
+      </button>
+    </div>
+  </div>
+
   <div id="carousel">
     <div id="views">
 
@@ -134,7 +152,7 @@
             </div>
             <div class="stats-charts">
               <div class="stats-chart-wrap">
-                <div class="stats-chart-label">Speed (kph)</div>
+                <div class="stats-chart-label" id="stats-speed-label">Speed (km/h)</div>
                 <canvas class="stats-chart" id="chart-speed" width="380" height="110"></canvas>
               </div>
               <div class="stats-chart-wrap">
@@ -723,6 +741,12 @@
               <button class="relay-btn" id="btn-gamemode" onclick="window.location.href='/game.html'">
                 <span class="relay-btn__label">Play Doom</span>
               </button>
+
+              <div class="stat-label settings-lower-label">Speed Units</div>
+              <div class="bright-mode-row">
+                <button class="bright-mode-btn" id="unit-kph" onclick="setSpeedUnit('kph')">km/h</button>
+                <button class="bright-mode-btn" id="unit-mph" onclick="setSpeedUnit('mph')">mph</button>
+              </div>
 
               <div class="stat-label settings-lower-label">Pi Health</div>
               <div class="settings-sys-grid">
