@@ -31,8 +31,26 @@ class TestDecodeRPM:
     def test_zero(self):
         assert decode_rpm(b'\x00\x00') == 0.0
 
-    def test_max_16bit(self):
-        assert decode_rpm(b'\xFF\xFF') == 65535.0
+    def test_plausible_high_rpm_accepted(self):
+        # 0x1194 = 4500, within the plausible ceiling — accepted.
+        assert decode_rpm(b'\x11\x94') == 4500.0
+
+    def test_implausible_value_rejected(self):
+        # 0xEBE9 = 60393 — the observed garbage value from a corrupt frame.
+        # Must be rejected (None) rather than latched as a real reading.
+        assert decode_rpm(b'\xEB\xE9') is None
+
+    def test_max_16bit_rejected(self):
+        # A fully-corrupt frame (0xFFFF = 65535) is implausible → None.
+        assert decode_rpm(b'\xFF\xFF') is None
+
+    def test_ceiling_boundary(self):
+        from obd.decoder import RPM_MAX_PLAUSIBLE
+        # Exactly at the ceiling is accepted; one above is rejected.
+        hi = RPM_MAX_PLAUSIBLE
+        assert decode_rpm(bytes([hi >> 8, hi & 0xFF])) == float(hi)
+        over = hi + 1
+        assert decode_rpm(bytes([over >> 8, over & 0xFF])) is None
 
     def test_too_short(self):
         assert decode_rpm(b'\x03') is None
@@ -246,3 +264,50 @@ class TestEngineData:
         )
         assert data.fault_codes == []
         assert data.rpm == 768.0
+
+
+# ── Fault-code library (get_fault_detail) ───────────────────────────────────
+
+class TestFaultDetail:
+    def test_known_code_reference_voltage(self):
+        from obd.dtc_lookup import get_fault_detail
+        d = get_fault_detail("2-5")
+        assert d["code"] == "2-5"
+        assert d["severity"] == "low"
+        assert "5V reference" in d["explanation"] or "reference" in d["explanation"].lower()
+        assert len(d["causes"]) >= 1
+        assert d["expected"] is True
+
+    def test_known_code_ambient_air_temp_is_info(self):
+        from obd.dtc_lookup import get_fault_detail
+        d = get_fault_detail("4-6")
+        assert d["severity"] == "info"
+        assert d["expected"] is True
+
+    def test_expected_code_without_explicit_detail_gets_info(self):
+        from obd.dtc_lookup import get_fault_detail
+        # (10,1) A/C fan open load — expected on a base Defender, no explicit entry.
+        d = get_fault_detail("10-1")
+        assert d["expected"] is True
+        assert d["severity"] == "info"
+        assert len(d["causes"]) >= 1
+
+    def test_unexpected_code_gets_low_generic(self):
+        from obd.dtc_lookup import get_fault_detail
+        # (1,1) exists in the table but is not Defender-expected.
+        d = get_fault_detail("1-1")
+        assert d["expected"] is False
+        assert d["severity"] == "low"
+        assert "explanation" in d and d["explanation"]
+
+    def test_unparseable_code_does_not_raise(self):
+        from obd.dtc_lookup import get_fault_detail
+        d = get_fault_detail("garbage")
+        assert d["code"] == "garbage"
+        assert "explanation" in d
+        assert isinstance(d["causes"], list)
+
+    def test_count_note_present(self):
+        from obd.dtc_lookup import get_fault_detail
+        d = get_fault_detail("4-6")
+        assert "logged" in d["count_note"].lower()

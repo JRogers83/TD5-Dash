@@ -35,10 +35,19 @@ class EngineData:
 # [CONFIRMED] raw 16-bit value = RPM. No division factor.
 # Vehicle: 768 RPM at idle.  Only responds with engine running.
 
+# Plausibility ceiling. The TD5 governs at ~4,200–4,500 rpm; the gauge tops out
+# at 5,000. A corrupt-but-plausibly-framed response (recv_frame tolerates a bad
+# checksum) can decode to any 16-bit value — e.g. bytes EB E9 = 60393 rpm, which
+# was observed latching the trip-computer peak and poisoning the history chart.
+# Reject anything above this ceiling so garbage never propagates as a real reading.
+RPM_MAX_PLAUSIBLE = 6000
+
 def decode_rpm(payload: bytes) -> Optional[float]:
     if len(payload) < 2:
         return None
     raw = (payload[0] << 8) | payload[1]
+    if raw > RPM_MAX_PLAUSIBLE:
+        return None
     return float(raw)
 
 

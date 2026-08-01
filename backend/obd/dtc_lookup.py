@@ -325,6 +325,101 @@ _DEFENDER_EXPECTED: frozenset[tuple[int, int]] = frozenset({
 })
 
 
+# Plain-English detail for the on-dash fault-code library. Keyed by (group, sub).
+# Any code without an explicit entry falls back to a generic detail built from its
+# description + expected flag (see get_fault_detail), so every code shows something.
+# Severity: "info"   — expected/harmless on this vehicle, no action needed
+#           "low"    — worth noting; usually wiring/sensor, rarely affects running
+#           "medium" — should be investigated; may affect driveability
+#           "high"   — investigate promptly; can affect running or cause damage
+_FAULT_DETAIL: dict[tuple[int, int], dict] = {
+    (2, 5): {
+        "severity": "low",
+        "explanation": (
+            "The ECU's 5V reference supply — which feeds sensors such as the MAP "
+            "and throttle position sensor — was logged reading low. 'Logged' (not "
+            "current) usually means it recovered. A reference fault can make several "
+            "sensor readings look wrong at once, so it's worth ruling out first."
+        ),
+        "causes": [
+            "Chafed or corroded wiring / a poor connector on a 5V sensor circuit",
+            "A poor earth to the ECU or its sensors",
+            "A single sensor intermittently dragging the reference line down",
+        ],
+    },
+    (4, 6): {
+        "severity": "info",
+        "explanation": (
+            "Ambient air temperature sensor circuit logged high. On a base Defender "
+            "TD5 (no EU3 4-wire sensor) this is a well-known, harmless false positive "
+            "and does not affect how the engine runs."
+        ),
+        "causes": [
+            "No EU3 ambient air temperature sensor fitted (normal on this vehicle)",
+            "If fitted: failing sensor, poor connector, or contamination "
+            "(e.g. from a blanked-off EGR)",
+        ],
+    },
+}
+
+
+def get_fault_detail(code: str) -> dict:
+    """Full fault-library entry for a single code in "group-sub" notation.
+
+    Combines the DTC description, the Defender-expected flag, and — where known —
+    a plain-English explanation, likely causes, and a severity. Codes without an
+    explicit entry get a sensible generic detail so every code shows something on
+    the road. Never raises: an unparseable code returns an "unknown" entry.
+    """
+    key: tuple[int, int] | None = None
+    try:
+        group_s, sub_s = code.split("-")
+        key = (int(group_s), int(sub_s))
+    except (ValueError, AttributeError):
+        key = None
+
+    description = _FAULT_TABLE.get(key, f"Unknown fault ({code})") if key else f"Unknown fault ({code})"
+    expected = key in _DEFENDER_EXPECTED if key else False
+    detail = _FAULT_DETAIL.get(key) if key else None
+
+    if detail is None:
+        if expected:
+            detail = {
+                "severity": "info",
+                "explanation": (
+                    f"{description}. This is a known harmless fault on a base "
+                    "Defender TD5 (the relevant equipment isn't fitted) and does "
+                    "not affect how the engine runs."
+                ),
+                "causes": ["Equipment not fitted on this vehicle (normal)"],
+            }
+        else:
+            detail = {
+                "severity": "low",
+                "explanation": (
+                    f"{description}. Logged faults are most often a wiring, "
+                    "connector or earth problem on this circuit rather than an "
+                    "outright component failure."
+                ),
+                "causes": [
+                    "Chafed/corroded wiring or a poor connector on this circuit",
+                    "A poor earth",
+                    "The sensor or actuator on this circuit itself",
+                ],
+            }
+
+    return {
+        "code":        code,
+        "description": description,
+        "expected":    expected,
+        "severity":    detail["severity"],
+        "explanation": detail["explanation"],
+        "causes":      detail["causes"],
+        "count_note":  "The ×N figure is how many times this fault has been "
+                       "logged since faults were last cleared — not a measured value.",
+    }
+
+
 def decode_faults(payload: bytes) -> list[dict]:
     """
     Decode the raw data bytes from a PID 0x20 (Faults) response.

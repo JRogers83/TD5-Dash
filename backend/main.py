@@ -374,6 +374,17 @@ async def clear_dtc() -> dict:
     return {"ok": True, "detail": "Clear request queued"}
 
 
+@app.get("/obd/dtc/{code}")
+async def obd_dtc_detail(code: str) -> dict:
+    """Fault-code library entry (explanation, likely causes, severity) for a code.
+
+    Drives the tappable fault detail on the Engine view. Always returns an entry
+    (generic detail for unknown codes); never raises.
+    """
+    from obd.dtc_lookup import get_fault_detail
+    return get_fault_detail(code)
+
+
 # ── API: Pi OBD diagnostic ────────────────────────────────────────────────────
 
 @app.post("/obd/full-test")
