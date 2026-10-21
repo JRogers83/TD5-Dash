@@ -43,6 +43,10 @@ EXPECTED_SCHEMAS = {
         "progress_s":    (int, float),
         "duration_s":    (int, float),
         "device_name":   str,
+        "track_id":      str,
+        "liked":         bool,
+        "error":         bool,
+        "auth_required": bool,
     },
     "system": {
         "override_mode":  bool,

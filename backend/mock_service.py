@@ -40,6 +40,10 @@ _MOCK: dict = {
         "progress_s": 152,
         "duration_s": 271,
         "device_name": "Defender",
+        "track_id": "mock-track-id",
+        "liked": False,
+        "error": False,
+        "auth_required": False,
     },
     "system": {
         "override_mode":  False,

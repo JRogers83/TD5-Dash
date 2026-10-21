@@ -326,7 +326,7 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                                         "boost_bar":        last_boost,
                                         "throttle_pct":     last_throttle,
                                         "throttle_raw_pct": last_throttle_raw,
-                                        "battery_v":        last_battery or 0.0,
+                                        "battery_v":        last_battery,   # None until first read
                                         "road_speed_kph":   round(last_speed) if last_speed is not None else 0,
                                         "fuel_temp_c":      last_fuel_temp,
                                         "fault_codes":      fault_codes,
@@ -344,7 +344,7 @@ def _poll_loop(manager: ConnectionManager, loop: asyncio.AbstractEventLoop) -> N
                                         "coolant_temp_c": last_coolant,
                                         "boost_bar":      last_boost,
                                         "throttle_pct":   last_throttle,
-                                        "battery_v":      last_battery or 0.0,
+                                        "battery_v":      last_battery,   # NULL, not a fake 0.0 V, until read
                                         "fuel_temp_c":    last_fuel_temp,
                                     })
                                     last_history_write = time.monotonic()

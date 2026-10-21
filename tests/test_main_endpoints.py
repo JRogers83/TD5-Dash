@@ -18,3 +18,10 @@ def test_clear_dtc_never_claims_success():
         assert body["ok"] is False
         assert body["detail"]
     os.environ["TD5_MOCK"] = "1"
+
+
+def test_relay_reports_not_switched_when_no_hardware():
+    # Amp relay is an unwired stub; it must not claim success (review finding #10).
+    body = TestClient(main.app).post("/system/relay", json={"name": "amp", "state": True}).json()
+    assert body["ok"] is False
+    assert body["state"] is False

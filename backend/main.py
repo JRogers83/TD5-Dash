@@ -342,9 +342,11 @@ async def set_brightness(cmd: _BrightnessCmd) -> dict:
 
 @app.post("/system/relay")
 async def set_relay(cmd: _RelayCmd) -> dict:
-    """Control a named output relay. GPIO hardware not yet wired — logs only."""
-    log.info("Relay '%s' → %s (no-op — GPIO hardware not wired)", cmd.name, "ON" if cmd.state else "OFF")
-    return {"ok": True, "name": cmd.name, "state": cmd.state}
+    """Control a named output relay. No relay hardware is wired, so nothing is
+    switched — report that truthfully rather than ok=true."""
+    log.info("Relay '%s' → %s requested (no relay hardware wired — not switched)",
+             cmd.name, "ON" if cmd.state else "OFF")
+    return {"ok": False, "name": cmd.name, "state": False, "detail": "Not wired"}
 
 
 # ── API: DTC fault codes ─────────────────────────────────────────────────────

@@ -136,6 +136,7 @@ const throttleGauge = new RadialGauge(Object.assign({}, CLASSIC, FONTS, {
 //   amber 12.0–12.5 low at rest, or > 14.8 over-charging
 //   green otherwise (12.5 rest → ~13.8–14.4 charging is all normal)
 function batteryColor(v) {
+  if (v == null) return '';   // no reading yet -> grey dot, not red
   if (v < 12.0) return 'red';
   if (v < 12.5 || v > 14.8) return 'warn';
   return 'on';
@@ -146,6 +147,7 @@ function batteryColor(v) {
 //   blue < 60 (not warmed up)   green 60–95 (normal)
 //   amber 95–105 (hot)          red ≥ 105 (overheating — genuine concern)
 function coolantColor(c) {
+  if (c == null) return '';
   if (c < 60)  return 'blue';
   if (c < 95)  return 'on';
   if (c < 105) return 'warn';
@@ -162,6 +164,7 @@ function coolantColor(c) {
 //   amber 70–90 (working hard / very hot ambient)   red ≥ 90 (charge air very hot)
 // (Previously red at ≥60°C, which lit up under ordinary summer driving.)
 function airTempColor(c) {
+  if (c == null) return '';
   if (c < 0)  return 'blue';
   if (c < 70) return 'on';
   if (c < 90) return 'warn';
@@ -172,14 +175,25 @@ function airTempColor(c) {
 // running and higher under sustained load:
 //   blue < 15   green 15–65   amber 65–80   red ≥ 80
 function fuelTempColor(c) {
+  if (c == null) return '';
   if (c < 15) return 'blue';
   if (c < 65) return 'on';
   if (c < 80) return 'warn';
   return 'red';
 }
 
+// Defensive DOM writers for the WebSocket hot paths: a missing element must never
+// abort the rest of a tick's updates.
+function setTxt(id, v) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = v;
+}
+function setCls(id, cls) {
+  const el = document.getElementById(id);
+  if (el) el.className = cls;
+}
 function setStatDot(id, colorCls) {
-  document.getElementById(id).className = `status-dot ${colorCls}`;
+  setCls(id, `status-dot ${colorCls}`);
 }
 
 // ── Speed units (global km/h ↔ mph) ─────────────
@@ -236,6 +250,9 @@ const COOLANT_TREND_SAMPLES  = 5;     // readings for trend calculation
 const _coolantHistory = [];
 
 function _coolantTrend(current) {
+  // No reading yet (ECU temps are polled every 5th cycle): neutral grey dot, and
+  // don't pollute the trend window with a null.
+  if (current == null) return { shape: 'dot', colour: '' };
   _coolantHistory.push(current);
   if (_coolantHistory.length > COOLANT_TREND_SAMPLES) _coolantHistory.shift();
 
@@ -265,6 +282,7 @@ function _coolantTrend(current) {
 function _setCoolantIndicator(temp) {
   const { shape, colour } = _coolantTrend(temp);
   const el = document.getElementById('dot-coolant');
+  if (!el) return;
   el.className = `status-dot ${colour}`;
   // Shape: modify innerHTML for arrows
   if (shape === 'up') {
@@ -277,27 +295,32 @@ function _setCoolantIndicator(temp) {
 }
 
 // ── Engine data handler ────────────────────────
+let _lastEngine = null;   // latest payload, so the Raw Data layer can paint on entry
+
 function handleEngine(d) {
+  _lastEngine = d;
   rpmGauge.value      = d.rpm;
   boostGauge.value    = d.boost_bar;
   throttleGauge.value = d.throttle_pct;
 
-  document.getElementById('txt-battery').textContent   = `${d.battery_v.toFixed(1)} V`;
-  document.getElementById('txt-coolant').textContent   = `${d.coolant_temp_c} °C`;
-  document.getElementById('txt-air-temp').textContent  = `${d.inlet_air_temp_c} °C`;
+  // Battery and temps are null until the ECU has been polled for them (or when
+  // unavailable) — show a dash and a grey dot rather than "null °C" / a false colour.
+  setTxt('txt-battery',  d.battery_v != null ? `${d.battery_v.toFixed(1)} V` : '—');
+  setTxt('txt-coolant',  d.coolant_temp_c != null ? `${d.coolant_temp_c} °C` : '—');
+  setTxt('txt-air-temp', d.inlet_air_temp_c != null ? `${d.inlet_air_temp_c} °C` : '—');
 
   // Faults tile
   const faultCount = (d.fault_codes || []).length;
-  document.getElementById('txt-faults').textContent = faultCount;
+  setTxt('txt-faults', faultCount);
   setStatDot('dot-faults', faultCount > 0 ? 'red' : 'on');
 
   setStatDot('dot-battery',  batteryColor(d.battery_v));
   _setCoolantIndicator(d.coolant_temp_c);
   setStatDot('dot-air-temp', airTempColor(d.inlet_air_temp_c));
 
-  // Update DTC detail (Engine layer 1), Raw Data (Engine layer 3), trip, and calibration
+  // DTC list, Raw Data, trip and calibration
   _updateDTCList(d.fault_codes);
-  _updateRawData(d);
+  if (NAV.currentView === 0 && NAV.currentLayerDomIdx === 3) _updateRawData(d);
   _updateThrottleRaw(d.throttle_raw_pct);
   _trip.update(d);
   _trip.render();
@@ -605,39 +628,33 @@ function applySocColor(soc) {
 
 function handleVictron(d) {
   setArc('arc-soc', d.soc_pct, 0, 100, 377);
-  document.getElementById('txt-soc').textContent = Math.round(d.soc_pct);
+  setTxt('txt-soc', Math.round(d.soc_pct));
   applySocColor(d.soc_pct);
 
-  document.getElementById('txt-voltage').textContent = `${d.voltage_v.toFixed(1)} V`;
+  setTxt('txt-voltage', `${d.voltage_v.toFixed(1)} V`);
 
   const currentSign = d.current_a > 0 ? '+' : '';
-  document.getElementById('txt-current').textContent = `${currentSign}${d.current_a.toFixed(1)} A`;
+  setTxt('txt-current', `${currentSign}${d.current_a.toFixed(1)} A`);
 
-  document.getElementById('txt-solar').textContent = `${d.solar_yield_wh} Wh`;
+  setTxt('txt-solar', `${d.solar_yield_wh} Wh`);
 
   const flow = d.current_a > 0.5 ? 'Charging' : d.current_a < -0.5 ? 'Discharging' : 'Idle';
-  document.getElementById('txt-flow').textContent = flow;
+  setTxt('txt-flow', flow);
 
-  const badge = document.getElementById('txt-charge-state');
   const state = CHARGE_STATE_LABELS[d.charge_state] ?? { label: d.charge_state, cls: '' };
-  badge.textContent = state.label;
-  badge.className = `charge-badge ${state.cls}`;
+  setTxt('txt-charge-state', state.label);
+  setCls('txt-charge-state', `charge-badge ${state.cls}`);
 
   // Orion XS DC-DC charger
   const orion = CHARGE_STATE_LABELS[d.orion_state] ?? { label: d.orion_state ?? 'Off', cls: '' };
-  document.getElementById('txt-orion-state').textContent = orion.label;
-  document.getElementById('txt-orion-input').textContent =
-    d.orion_input_v > 0 ? `${d.orion_input_v.toFixed(1)} V` : '— V';
+  setTxt('txt-orion-state', orion.label);
+  setTxt('txt-orion-input', d.orion_input_v > 0 ? `${d.orion_input_v.toFixed(1)} V` : '— V');
 
   _renderVictronDetail(d, state, orion);
 }
 
 // Detailed per-unit Victron layer (Victron view, layer 1)
 function _renderVictronDetail(d, chargeState, orion) {
-  const setTxt = (id, v) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = v;
-  };
   const sign = (n) => (n > 0 ? '+' : '');
 
   // SmartShunt
@@ -789,56 +806,48 @@ function formatUptime(s) {
 function handleStarlink(d) {
   const state = SL_STATES[d.state] ?? { label: d.state, cls: 'sl-state--unknown' };
 
-  document.getElementById('sl-roaming-badge').style.display =
-    d.roaming ? '' : 'none';
+  const roamEl = document.getElementById('sl-roaming-badge');
+  if (roamEl) roamEl.style.display = d.roaming ? '' : 'none';
 
   // Status tile
   const isActive = d.state === 'connected';
-  document.getElementById('sl-status-txt').textContent = isActive ? 'Online' : 'Offline';
-  document.getElementById('sl-status-dot').className   = `status-dot ${isActive ? 'on' : 'red'}`;
+  setTxt('sl-status-txt', isActive ? 'Online' : 'Offline');
+  setCls('sl-status-dot', `status-dot ${isActive ? 'on' : 'red'}`);
 
-  const obsDot = document.getElementById('sl-obstruction-dot');
-  const obsTxt = document.getElementById('sl-obstruction-txt');
   // Dot: red = currently blocked, amber = historical obstruction >0, green = clear
-  obsDot.className  = `status-dot ${d.obstructed ? 'red' : d.obstruction_pct > 0 ? 'warn' : 'on'}`;
+  setCls('sl-obstruction-dot', `status-dot ${d.obstructed ? 'red' : d.obstruction_pct > 0 ? 'warn' : 'on'}`);
   // Text: show percentage if any obstruction exists, otherwise "Clear"
-  obsTxt.textContent = d.obstruction_pct > 0 ? `${d.obstruction_pct}%` : 'Clear';
+  setTxt('sl-obstruction-txt', d.obstruction_pct > 0 ? `${d.obstruction_pct}%` : 'Clear');
 
   // Stats grid
   const isLive = d.state === 'connected';
-  document.getElementById('sl-down').textContent =
-    isLive ? `${d.down_mbps} Mbps` : '—';
-  document.getElementById('sl-up').textContent =
-    isLive ? `${d.up_mbps} Mbps`   : '—';
-  document.getElementById('sl-latency').textContent =
-    isLive ? `${d.latency_ms} ms`  : '—';
-  document.getElementById('sl-loss').textContent =
-    isLive ? `${d.ping_drop_pct}%` : '—';
-  document.getElementById('sl-obstruction-pct').textContent =
-    `${d.obstruction_pct}%`;
-  document.getElementById('sl-uptime').textContent =
-    formatUptime(d.uptime_s);
+  setTxt('sl-down', isLive ? `${d.down_mbps} Mbps` : '—');
+  setTxt('sl-up', isLive ? `${d.up_mbps} Mbps`   : '—');
+  setTxt('sl-latency', isLive ? `${d.latency_ms} ms`  : '—');
+  setTxt('sl-loss', isLive ? `${d.ping_drop_pct}%` : '—');
+  setTxt('sl-obstruction-pct', `${d.obstruction_pct}%`);
+  setTxt('sl-uptime', formatUptime(d.uptime_s));
 
   // Alerts panel
   const alertsEl = document.getElementById('sl-alerts');
-  if (!d.alerts || d.alerts.length === 0) {
-    alertsEl.innerHTML = '<div class="sl-alert-ok">✓ All clear</div>';
-  } else {
-    alertsEl.innerHTML = d.alerts.map(k => {
-      const label = SL_ALERT_LABELS[k] ?? k;
-      return `<div class="sl-alert-item">⚠ ${label}</div>`;
-    }).join('');
+  if (alertsEl) {
+    if (!d.alerts || d.alerts.length === 0) {
+      alertsEl.innerHTML = '<div class="sl-alert-ok">✓ All clear</div>';
+    } else {
+      alertsEl.innerHTML = d.alerts.map(k => {
+        const label = SL_ALERT_LABELS[k] ?? k;
+        return `<div class="sl-alert-item">⚠ ${label}</div>`;
+      }).join('');
+    }
   }
 
   // Settings view — connectivity dot
-  const settingsDot = document.getElementById('dot-starlink');
-  const settingsTxt = document.getElementById('txt-starlink');
   const dotCls = {
     connected: 'on', searching: 'warn', booting: 'warn',
     sleeping: 'off', offline: 'red',   unknown: 'red',
   };
-  settingsDot.className   = `status-dot ${dotCls[d.state] ?? 'red'}`;
-  settingsTxt.textContent = state.label;
+  setCls('dot-starlink', `status-dot ${dotCls[d.state] ?? 'red'}`);
+  setTxt('txt-starlink', state.label);
 }
 
 // GPS fix state model (round-2 #5):
@@ -950,40 +959,37 @@ function handleSystem(d) {
   setDot('dot-wifi',     d.wifi_connected);
   setDot('dot-bt',       d.bt_connected);
   setDot('dot-override', d.override_mode);
-  document.getElementById('txt-wifi').textContent     = d.wifi_connected ? 'Connected' : 'Off';
-  document.getElementById('txt-bt').textContent       = d.bt_connected   ? 'Connected' : 'Off';
-  document.getElementById('txt-override').textContent = d.override_mode  ? 'Active'    : 'Off';
+  setTxt('txt-wifi', d.wifi_connected ? 'Connected' : 'Off');
+  setTxt('txt-bt', d.bt_connected   ? 'Connected' : 'Off');
+  setTxt('txt-override', d.override_mode  ? 'Active'    : 'Off');
 
   // CPU temp — dot goes red if throttled regardless of temperature
   const t = d.cpu_temp_c;
-  document.getElementById('txt-cpu-temp').textContent = t != null ? `${t} °C` : '—';
-  document.getElementById('dot-cpu-temp').className   =
-    `status-dot ${d.throttled ? 'red' : t == null ? '' : t < 60 ? 'on' : t < 75 ? 'warn' : 'red'}`;
+  setTxt('txt-cpu-temp', t != null ? `${t} °C` : '—');
+  setCls('dot-cpu-temp', `status-dot ${d.throttled ? 'red' : t == null ? '' : t < 60 ? 'on' : t < 75 ? 'warn' : 'red'}`);
 
   // CPU load
   const load = d.cpu_load_pct;
-  document.getElementById('txt-cpu-load').textContent = load != null ? `${load} %` : '—';
+  setTxt('txt-cpu-load', load != null ? `${load} %` : '—');
   _sysDot('dot-cpu-load', load, 60, 85);
 
   // RAM
   const ram = d.ram_usage_pct;
-  document.getElementById('txt-ram').textContent = ram != null ? `${ram} %` : '—';
+  setTxt('txt-ram', ram != null ? `${ram} %` : '—');
   _sysDot('dot-ram', ram, 75, 90);
 
   // Disk
   const disk = d.disk_usage_pct;
-  document.getElementById('txt-disk').textContent = disk != null ? `${disk} %` : '—';
+  setTxt('txt-disk', disk != null ? `${disk} %` : '—');
   _sysDot('dot-disk', disk, 70, 90);
 
   // Uptime
-  document.getElementById('txt-uptime').textContent = formatUptime(d.uptime_s);
+  setTxt('txt-uptime', formatUptime(d.uptime_s));
 
   // Throttle
   const thr = d.throttled;
-  document.getElementById('txt-throttle').textContent =
-    thr == null ? 'N/A' : thr ? 'Throttled' : 'OK';
-  document.getElementById('dot-throttle').className =
-    `status-dot ${thr == null ? '' : thr ? 'red' : 'on'}`;
+  setTxt('txt-throttle', thr == null ? 'N/A' : thr ? 'Throttled' : 'OK');
+  setCls('dot-throttle', `status-dot ${thr == null ? '' : thr ? 'red' : 'on'}`);
 
   // Sidelights → auto day/night mode switch
   // d.sidelights is null until the GPIO hardware is wired; ignore until then.
@@ -1101,20 +1107,33 @@ function _applyRelayUI(name) {
 }
 
 function toggleRelay(name) {
-  _relayState[name] = !_relayState[name];
-  localStorage.setItem(`td5_relay_${name}`, _relayState[name]);
-  _applyRelayUI(name);
+  // Only flip the UI once the backend confirms it actually switched something
+  // (today /system/relay reports ok:false — no relay hardware is wired).
+  const want = !_relayState[name];
   fetch('/system/relay', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ name, state: _relayState[name] }),
+    body:    JSON.stringify({ name, state: want }),
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      _relayState[name] = want;
+      localStorage.setItem(`td5_relay_${name}`, _relayState[name]);
+      _applyRelayUI(name);
+    } else {
+      const lbl = document.getElementById(`lbl-${name}`);
+      if (lbl) {
+        lbl.textContent = d.detail || 'Unavailable';
+        setTimeout(() => _applyRelayUI(name), 2500);
+      }
+    }
   }).catch(() => {});
 }
 
 // Initialise settings controls on load
 (function _initSettings() {
   _applyBrightUI(_bright);
-  _relayState['amp'] = _loadRelayState('amp');
+  // No relay hardware is wired, so never restore a stale 'on' from a previous session.
+  _relayState['amp'] = false;
   _applyRelayUI('amp');
   refreshVersionInfo();
 }());
@@ -1305,7 +1324,6 @@ const NAV = (() => {
     el.addEventListener('touchmove', _onMove, { passive: false });
     el.addEventListener('touchend', _onEnd, { passive: false });
 
-    _updateIndicator();
   }
 
   function _onStart(e) {
@@ -1402,7 +1420,6 @@ const NAV = (() => {
     currEl.style.transform = `translateX(${-dir * 1280}px)`;
 
     curView = next;
-    _updateIndicator();
     if (next === 1 && typeof VIS !== 'undefined') VIS.wake();   // Spotify view: restart visualiser
 
     const leaving = currEl;
@@ -1448,7 +1465,6 @@ const NAV = (() => {
     // Update curLayer to the position in enabled array
     const enabled = enabledLayers[curView];
     curLayer[curView] = enabled.indexOf(targetLayerDomIdx);
-    _updateIndicator();
     _onLayerEntered(curView, targetLayerDomIdx);
 
     const leaving = currEl;
@@ -1481,10 +1497,6 @@ const NAV = (() => {
     }
   }
 
-  function _updateIndicator() {
-    // No-op — nav dots removed per user preference
-  }
-
   // Called whenever a layer becomes the active layer (via swipe or navigateTo).
   function _onLayerEntered(viewIdx, layerDomIdx) {
     // Engine view (0) → Engine Stats layer (2): auto-load the history charts on
@@ -1494,6 +1506,8 @@ const NAV = (() => {
       const active = document.querySelector('.stats-range-btn--active');
       loadHistory(active ? active.dataset.range : 'hour');
     }
+    // Raw Data (Engine layer 3) is only repainted while visible — paint it now.
+    if (viewIdx === 0 && layerDomIdx === 3 && _lastEngine) _updateRawData(_lastEngine);
   }
 
   return {
@@ -1681,8 +1695,16 @@ document.getElementById('tile-faults').addEventListener('click', () => {
 //   { code, description, count, expected }
 // where code is Nanocom notation e.g. "4-6"
 
+let _dtcSig = null;   // signature of the last-rendered fault set
+
 function _updateDTCList(faultCodes) {
   const list = document.getElementById('dtc-list');
+  if (!list) return;
+  // fault_codes is re-sent every poll tick but only changes every ~30 s; rebuilding
+  // the DOM each time is wasted work and can swallow a tap on a row mid-rebuild.
+  const sig = JSON.stringify(faultCodes || []);
+  if (sig === _dtcSig) return;
+  _dtcSig = sig;
   if (!faultCodes || faultCodes.length === 0) {
     list.innerHTML = '<div class="dtc-none">No faults stored</div>';
     return;
@@ -1964,14 +1986,6 @@ function doRestart() {
 
 function _doReboot() {
   fetch('/system/restart', { method: 'POST' }).catch(() => {});
-}
-
-function reimportWeatherLocation() {
-  // This will be fully implemented when the backend supports reading .env
-  // For now, just show a brief confirmation
-  fetch('/settings').then(r => r.json()).then(settings => {
-    alert('Weather location: ' + (settings.weather_location || 'unknown'));
-  }).catch(() => {});
 }
 
 // ── Engine Stats charts ─────────────────────────

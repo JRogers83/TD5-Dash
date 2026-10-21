@@ -356,7 +356,6 @@ async def save_track(track_id: str) -> bool:
             return False
         # Suppress liked-status poll overwrites for 5 seconds
         global _like_hold_until
-        import time as _time
         _like_hold_until = time.time() + 5.0
         return True
     except Exception as exc:

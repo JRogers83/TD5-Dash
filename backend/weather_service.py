@@ -120,7 +120,7 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
     last_success  = 0.0   # time of the most recent successful fetch
 
     while True:
-        now = asyncio.get_event_loop().time()
+        now = asyncio.get_running_loop().time()
 
         # Before the first successful fetch use a short retry interval so the
         # display populates quickly even if the network isn't ready at boot.
@@ -141,14 +141,13 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
                     cached["current"]["temp_c"],
                     cached["current"]["weather_code"],
                 )
+            elif cached is None:
+                last_fetch = now  # retry after STARTUP_RETRY_S
+                log.warning("Weather fetch failed — retrying in %ds", STARTUP_RETRY_S)
             else:
-                last_fetch = now  # will retry after interval (30s pre-data, 5min post-data)
-                if cached is None:
-                    log.warning("Weather fetch failed — retrying in %ds", STARTUP_RETRY_S)
-                else:
-                    # Has cached data — back off to 5 min rather than hammering the API
-                    last_fetch = now - FETCH_INTERVAL_S + 300
-                    log.warning("Weather fetch failed — will retry in 5 min")
+                # Has cached data — back off to 5 min rather than hammering the API
+                last_fetch = now - FETCH_INTERVAL_S + 300
+                log.warning("Weather fetch failed — will retry in 5 min")
 
         # Always broadcast every cycle so newly-connected clients get data
         # within PUSH_INTERVAL_S seconds.

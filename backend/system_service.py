@@ -61,12 +61,13 @@ def _read_cpu_load() -> float:
         idle  = int(parts[4])
         total = sum(int(x) for x in parts[1:])
 
+        first   = _cpu_prev_total == 0   # no baseline yet
         d_total = total - _cpu_prev_total
         d_idle  = idle  - _cpu_prev_idle
         _cpu_prev_idle  = idle
         _cpu_prev_total = total
 
-        if d_total == 0 or _cpu_prev_total == 0:
+        if first or d_total == 0:
             return -1.0
         return round((1 - d_idle / d_total) * 100, 1)
     except Exception:
