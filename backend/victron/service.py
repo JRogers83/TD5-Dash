@@ -71,6 +71,8 @@ async def _scan_and_publish(manager: ConnectionManager) -> None:
     async with scanner:
         log.info("Victron BLE scanner active. Publishing every %.1f s.", PUBLISH_INTERVAL)
 
+        was_fresh = True   # log on fresh<->stale transitions only, not every tick
+
         while True:
             await asyncio.sleep(PUBLISH_INTERVAL)
 
@@ -93,13 +95,17 @@ async def _scan_and_publish(manager: ConnectionManager) -> None:
             }
             await manager.broadcast(payload)
 
-            if not state.is_fresh():
+            stale = state.stale_devices()
+            if stale and was_fresh:
+                ages = {"shunt": state.shunt_updated, "mppt": state.mppt_updated,
+                        "orion": state.orion_updated}
                 log.warning(
-                    "Victron data may be stale — shunt last seen %.0fs ago, "
-                    "MPPT last seen %.0fs ago",
-                    _age(state.shunt_updated),
-                    _age(state.mppt_updated),
+                    "Victron data may be stale — %s",
+                    ", ".join(f"{n} last seen {_age(ages[n]):.0f}s ago" for n in stale),
                 )
+            elif not stale and not was_fresh:
+                log.info("Victron data fresh again")
+            was_fresh = not stale
 
 
 def _age(ts: float) -> float:

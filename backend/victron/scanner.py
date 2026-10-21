@@ -100,14 +100,24 @@ class VictronState:
     mppt_updated:   float = field(default=0.0, repr=False)
     orion_updated:  float = field(default=0.0, repr=False)
 
+    # Devices that have a MAC+key configured and so are expected to report. The
+    # scanner narrows this to what is actually fitted; default is all three.
+    configured: frozenset = field(default=frozenset({"shunt", "mppt", "orion"}), repr=False)
+
+    def stale_devices(self, max_age_s: float = 10.0) -> list[str]:
+        """Names of configured devices that have not reported within max_age_s."""
+        now = time.monotonic()
+        updated = {
+            "shunt": self.shunt_updated,
+            "mppt":  self.mppt_updated,
+            "orion": self.orion_updated,
+        }
+        return [n for n in ("shunt", "mppt", "orion")
+                if n in self.configured and (now - updated[n]) >= max_age_s]
+
     def is_fresh(self, max_age_s: float = 10.0) -> bool:
         """True if all configured devices have reported within max_age_s seconds."""
-        now = time.monotonic()
-        return (
-            (now - self.shunt_updated) < max_age_s and
-            (now - self.mppt_updated)  < max_age_s and
-            (now - self.orion_updated) < max_age_s
-        )
+        return not self.stale_devices(max_age_s)
 
 
 def _get(parsed, name):
@@ -175,6 +185,13 @@ class VictronScanner:
         else:
             self._orion_mac = None
             log.info("Orion XS MAC/key not configured — DC-DC charger data unavailable")
+
+        # Only configured devices count towards the staleness check
+        self._state.configured = frozenset(
+            name for name, mac in (("shunt", self._shunt_mac),
+                                   ("mppt",  self._mppt_mac),
+                                   ("orion", self._orion_mac)) if mac
+        )
 
         self._scanner = None
 
