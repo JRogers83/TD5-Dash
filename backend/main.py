@@ -351,20 +351,16 @@ async def set_relay(cmd: _RelayCmd) -> dict:
 
 @app.post("/obd/clear-dtc")
 async def clear_dtc() -> dict:
-    """
-    Clear stored DTC fault codes on the TD5 ECU.
+    """Clear stored DTC fault codes — NOT IMPLEMENTED.
 
-    Uses KWP2000 service 0x14 (ClearDiagnosticInformation).
-    Only works when a live OBD session is active (TD5_MOCK=0 + engine on).
+    This used to return ok=True without sending anything, so the UI told the driver
+    faults were cleared when they were not. KWP2000 service 0x14 is listed in the
+    protocol reference but there is no vehicle-verified frame/parameter set for this
+    ECU, and an unverified write to an engine ECU is not worth guessing. Until a
+    clear sequence is captured and confirmed (see td5_pc_diag / pi_diag, which hold
+    the live-session lock pattern), report the truth.
     """
-    if os.getenv("TD5_MOCK", "1") == "1":
-        return {"ok": False, "detail": "DTC clear not available in mock mode"}
-    # The clear command needs to be sent through the active session.
-    # For now, this is a stub — the actual implementation requires thread-safe
-    # access to the running TD5Session, which will be wired when the OBD
-    # service supports command injection from the REST layer.
-    log.warning("DTC clear requested — command will be sent on next poll cycle")
-    return {"ok": True, "detail": "Clear request queued"}
+    return {"ok": False, "detail": "Not supported yet"}
 
 
 @app.get("/obd/dtc/{code}")
