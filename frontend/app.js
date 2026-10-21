@@ -425,6 +425,7 @@ const VIS = (() => {
   let canvas, ctx, grad;
   let bars, peaks, peakHold, peakVel, simBuf;
   let _playing = false;
+  let _raf = 0;   // pending requestAnimationFrame id (0 = loop stopped)
 
   // Real audio — set when getUserMedia succeeds
   let _analyser  = null;
@@ -465,11 +466,34 @@ const VIS = (() => {
         .catch(() => { /* no audio source — simulation remains active */ });
     }
 
-    requestAnimationFrame(_frame);
+    document.addEventListener('visibilitychange', wake);
+    wake();
+  }
+
+  // The loop only runs while it has something to draw: the Spotify view is the
+  // active view, the page is visible, and the bars are playing or still decaying.
+  // Anything that could change that calls wake() to (re)start it.
+  function _shouldRun() {
+    if (document.hidden) return false;
+    // NAV is declared further down this file; before it exists (VIS.init runs first)
+    // even `typeof NAV` throws (temporal dead zone), so read it defensively.
+    let view = 0;
+    try { view = NAV.currentView; } catch (_) { /* NAV not ready yet: Engine view */ }
+    if (view !== 1) return false;
+    if (_playing) return true;
+    for (let i = 0; i < NUM_BARS; i++) {
+      if (bars[i] > 0 || peaks[i] > 0) return true;
+    }
+    return false;
+  }
+
+  function wake() {
+    if (!_raf && _shouldRun()) _raf = requestAnimationFrame(_frame);
   }
 
   function setPlaying(playing) {
     _playing = playing;
+    wake();
   }
 
   // Map FFT bins (frequencyBinCount = 1024) onto NUM_BARS using logarithmic
@@ -506,7 +530,7 @@ const VIS = (() => {
   }
 
   function _frame(ts) {
-    requestAnimationFrame(_frame);
+    _raf = 0;
 
     let targets;
     if (_analyser && _playing) {
@@ -520,6 +544,7 @@ const VIS = (() => {
     for (let i = 0; i < NUM_BARS; i++) {
       const d = targets[i] - bars[i];
       bars[i] += d * (d > 0 ? 0.28 : 0.055);
+      if (!_playing && bars[i] < 0.002) bars[i] = 0;   // snap so decay terminates
     }
 
     for (let i = 0; i < NUM_BARS; i++) {
@@ -550,9 +575,11 @@ const VIS = (() => {
       if (ph > 4) ctx.fillRect(i * (BAR_W + GAP), BOTTOM - ph - 3, BAR_W, 2);
     }
     ctx.globalAlpha = 1;
+
+    if (_shouldRun()) _raf = requestAnimationFrame(_frame);
   }
 
-  return { init, setPlaying };
+  return { init, setPlaying, wake };
 })();
 
 VIS.init();
@@ -1376,6 +1403,7 @@ const NAV = (() => {
 
     curView = next;
     _updateIndicator();
+    if (next === 1 && typeof VIS !== 'undefined') VIS.wake();   // Spotify view: restart visualiser
 
     const leaving = currEl;
     setTimeout(() => {
