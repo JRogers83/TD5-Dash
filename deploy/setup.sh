@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"   # -P: physical path, must match the backend (Path.resolve) for the sudoers rule
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
 # The user who invoked sudo (falls back to 'pi' for direct root login)
@@ -30,7 +30,9 @@ apt-get update -qq
 PKG_MANIFEST="$SCRIPT_DIR/system/packages.txt"
 mapfile -t SYSTEM_PACKAGES < <(sed 's/#.*//' "$PKG_MANIFEST" | tr -d '\r' \
     | awk 'NF==1 && $1 ~ /^[a-z0-9][a-z0-9+.-]*$/ { print $1 }')
-apt-get install -y --no-install-recommends "${SYSTEM_PACKAGES[@]}"
+# --no-upgrade: install what is missing but never upgrade what is present, so re-running
+# setup.sh on a live vehicle cannot silently upgrade chromium/xorg/plymouth.
+apt-get install -y --no-install-recommends --no-upgrade "${SYSTEM_PACKAGES[@]}"
 
 # ── GPS (USB receiver via gpsd) ────────────────────────────────────────────────
 echo "▸ Configuring gpsd for u-blox USB GPS receiver..."

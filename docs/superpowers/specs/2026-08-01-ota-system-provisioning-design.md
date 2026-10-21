@@ -256,3 +256,14 @@ sudo — a *local* privilege escalation, separate from the "git remote has root"
 Mitigation if this matters: have `setup.sh` install a root-owned copy of the script outside the repo
 (e.g. `/usr/local/lib/td5-dash/`) and point sudoers at that; `cleanup.sh` would then have to move
 out of the repo too, which loses the version-controlled flexibility. Left as an explicit decision.
+
+### Correction found in review: install only what is missing
+
+§2 says the script runs `apt-get install -y $(packages.txt)`. Taken literally that also *upgrades*
+every already-installed package on the list (chromium, xorg, plymouth...) while the panel claims
+"1 pending: +feh". On a kiosk Pi a plymouth upgrade rebuilds the initramfs, which this install must
+copy to `/boot/firmware` by hand — i.e. an unannounced boot-path change. As built, `ota-provision.sh`
+filters the manifest to packages `dpkg-query` reports as not installed, passes only those to
+`apt-get install --no-upgrade`, and skips `apt-get update` entirely when nothing is missing, so Apply
+does exactly what the panel showed. `setup.sh` likewise uses `--no-upgrade` so re-running it on a live
+vehicle cannot upgrade installed packages.

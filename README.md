@@ -427,6 +427,15 @@ of `setup.sh` did not install. Re-run `sudo ./deploy/setup.sh` on the Pi once; u
 reports "One-time setup needed". The same re-run installs the udev rule that lets the dash set the
 screen backlight.
 
+Re-running `setup.sh` on a working vehicle is safe: edits to `config.txt` / `cmdline.txt` / the kiosk
+autostart are all guarded, and package installs use `--no-upgrade` so nothing already installed
+(Chromium, Xorg, Plymouth) is upgraded. It does rebuild the Plymouth initramfs and re-copy it to
+`/boot/firmware/`, and restarts Raspotify — so reboot afterwards to confirm a clean boot. The new
+sudoers rule takes effect immediately.
+
+*Apply Changes* itself only installs packages that are **missing** (exactly what the panel lists)
+and never upgrades ones already present.
+
 ### Governance (root-capable files)
 
 `deploy/ota-provision.sh`, `deploy/system/*` and `deploy/setup.sh` effectively give the git remote root

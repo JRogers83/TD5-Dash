@@ -36,19 +36,33 @@ manifest() {
     sed 's/#.*//' "$1" | tr -d '\r' | awk 'NF==1 && $1 ~ /^[a-z0-9][a-z0-9+.-]*$/ { print $1 }'
 }
 
-echo "== refresh package lists"
-# Non-fatal: the Pi may be offline or on a metered link; installed lists still work.
-apt-get update -qq || echo "warning: apt-get update failed — continuing with cached lists"
+is_installed() {
+    dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
+}
 
-PKGS="$(manifest "$DIR/packages.txt")"
-if [ -n "$PKGS" ]; then
-    echo "== install/upgrade: $(echo $PKGS | tr '\n' ' ')"
+# Install ONLY what is missing — exactly what the System panel listed as pending.
+# Never hand already-installed packages to apt: that would upgrade them, and on a
+# kiosk Pi an unannounced chromium/xorg/plymouth upgrade is a boot-risk (a plymouth
+# upgrade rebuilds the initramfs, which this install copies to /boot/firmware by hand).
+MISSING=""
+for pkg in $(manifest "$DIR/packages.txt"); do
+    is_installed "$pkg" || MISSING="$MISSING $pkg"
+done
+
+if [ -n "$MISSING" ]; then
+    echo "== refresh package lists"
+    # Non-fatal: the Pi may be offline or on a metered link; cached lists still work.
+    apt-get update -qq || echo "warning: apt-get update failed — continuing with cached lists"
+    echo "== install:$MISSING"
+    # --no-upgrade is a second guard: never upgrade a package that is already present.
     # shellcheck disable=SC2086
-    apt-get install -y --no-install-recommends $PKGS
+    apt-get install -y --no-install-recommends --no-upgrade $MISSING
+else
+    echo "== install: nothing missing"
 fi
 
 for pkg in $(manifest "$DIR/remove.txt"); do
-    if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+    if is_installed "$pkg"; then
         echo "== purge: $pkg"
         apt-get purge -y "$pkg"
     fi
