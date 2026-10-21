@@ -1,7 +1,7 @@
 # OTA System Provisioning — Design
 
 **Date:** 2026-08-01
-**Status:** approved design, pre-implementation
+**Status:** implemented on branch `ota-system-provisioning`, **PARKED — not merged.** It cannot be delivered through the OTA Update button: it needs a new sudoers rule, and installing a sudoers rule needs root, which the update flow does not have (its only root rights are `systemctl restart td5-dash`, `shutdown -h now`, and `apt-get install` of one fixed list of five packages). Shipping it requires one root action on the Pi (`sudo ./deploy/setup.sh`, or editing `/etc/sudoers.d/td5-dash`) — via SSH, a keyboard, or the SD card on another machine. Merge only once that is possible.
 **Related:** `docs/superpowers/specs/2026-07-03-ota-rollback-design.md` (code update/rollback)
 
 ## Problem
