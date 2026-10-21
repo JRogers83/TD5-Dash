@@ -171,7 +171,7 @@ No conflict.
 
 **Override mode (future):** `shared_state.override_mode = True` causes `/system/shutdown-prepare` to return 409, aborting the Witty Pi's shutdown. This is the hook for a future "stay on after ignition" UI button.
 
-**Legacy discrete path:** `ignition_service.py` remains in the codebase for the optoisolator-based ignition detection circuit. Activated by setting `IGNITION_SENSE_PIN` in `.env`. Do not set both `WITTYPI_ENABLED=1` and `IGNITION_SENSE_PIN` simultaneously.
+**Removed (2026-08):** the earlier discrete optoisolator ignition path (`ignition_service.py`) and CarPiHAT GPIO skeleton (`carpihat_service.py`) were deleted as dead code; the Witty Pi is the only power path. Both remain in git history.
 
 ---
 
@@ -248,7 +248,7 @@ Display PCB at front of pod, viewable area aligned with fascia opening via 3D-pr
 - ~~TD5 PID coverage: empirical testing needed in Phase 2.~~ RESOLVED: all PIDs confirmed on vehicle. See `documentation/TD5-ECU-Confirmed-Protocol.md`.
 - ~~CarPiHAT PRO 5 stock: UNRESOLVED.~~ RESOLVED: CarPiHAT dropped in favour of Witty Pi 5 HAT+. Power architecture: 12V relay on ignition feed to Witty Pi VIN + epoxy-potted 12V→5V buck to Witty Pi USB-C for permanent standby. No I2C conflict (Witty Pi RTC at 0x51; Waveshare touch at 0x38).
 - Head unit replacement model and BT dual-pairing confirmation. (Open)
-- ~~GPIO pin allocation: finalise during Phase 1.~~ RESOLVED: documented in carpihat_service.py; can be adapted for any GPIO circuit.
+- ~~GPIO pin allocation: finalise during Phase 1.~~ RESOLVED: moot — the Witty Pi path needs no GPIO allocation. (The old pin map was in `carpihat_service.py`, since removed; see git history.)
 - BLE coexistence: two Victron BLE + A2DP audio simultaneously. (Pending — needs hardware)
 - ~~Splash screen: Land Rover logo at display resolution.~~ RESOLVED: Plymouth theme with Land Rover badge + shimmer effect complete.
 

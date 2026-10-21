@@ -521,7 +521,6 @@ No shell script hook or I2C polling is needed. When wp5d detects VIN loss it cal
 Set in `.env`:
 ```
 WITTYPI_ENABLED=1
-# IGNITION_SENSE_PIN=   ← leave empty when using Witty Pi
 ```
 
 Configure VIN shutdown threshold using `wp5` to match the relay drop-out voltage on your specific relay.

@@ -75,18 +75,12 @@ VIN_DEBOUNCE_COUNT: int = 10    # consecutive below-threshold readings before sh
 
 
 def startup_checks() -> None:
-    """Called from main.py lifespan. Logs I2C info and warns on conflicting config."""
+    """Called from main.py lifespan. Logs I2C info."""
     log.info(
         "Witty Pi 5 power management active. "
         "I2C: 0x51 (Witty Pi RTC), 0x38 (Waveshare touch) — no address conflict. "
         "VIN shutdown threshold: %d mV.", VIN_SHUTDOWN_THRESHOLD_MV
     )
-    if os.getenv("IGNITION_SENSE_PIN"):
-        log.warning(
-            "Both WITTYPI_ENABLED=1 and IGNITION_SENSE_PIN are set. "
-            "Both shutdown paths are active simultaneously — this may cause races. "
-            "Clear IGNITION_SENSE_PIN when using the Witty Pi."
-        )
 
 
 def _request_wp5d_shutdown() -> bool:

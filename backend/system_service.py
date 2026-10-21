@@ -184,7 +184,7 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
             "throttled":      throttle,   # None = not available, True/False on Pi
             "wifi_connected": wifi,
             "bt_connected":   bt,
-            # GPIO state — updated via shared_state (ignition_service in future)
+            # GPIO state — read from shared_state (reserved for the Witty Pi override hook)
             "override_mode":  shared_state.override_mode,
             "sidelights":     shared_state.sidelights_on,
         }

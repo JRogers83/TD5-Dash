@@ -22,12 +22,12 @@ gps_speed_kmh: float | None = None   # GPS speed in km/h (set by gps_service)
 gps_heading_deg: float | None = None   # GPS heading degrees true (set by gps_service)
 gps_fix: int = 0               # 0=no data, 2=2D fix, 3=3D fix (set by gps_service)
 
-# GPIO state (set by ignition_service / future GPIO service)
+# GPIO state (reserved for the Witty Pi override hook / a future GPIO service)
 override_mode: bool = False
 # None until the sidelights GPIO is actually wired. Published to the frontend as
 # `sidelights`; the UI auto day/night switch only fires when this is a real bool,
-# so leaving it None avoids forcing NIGHT mode on every restart while the CarPiHAT
-# hardware is still pending. A future GPIO service writes True/False here.
+# so leaving it None avoids forcing NIGHT mode on every restart while the sidelights
+# input is still unwired. A future GPIO service writes True/False here.
 sidelights_on: bool | None = None
 
 # Chromium kiosk parent PID (set by main.py lifespan task once Chromium is running).

@@ -27,8 +27,8 @@ Full spec: `documentation/SPEC.md`
 | Kiosk | Chromium kiosk mode | Full-screen, no chrome |
 
 ### Deferred decisions
-- **Audio routing** — BT A2DP vs CarPiHAT DAC vs USB DAC (hardware pending)
-- **Power system** — CarPiHAT PRO 5 (preferred, out of stock) vs DIY discrete
+- **Audio routing** — BT A2DP vs USB DAC (hardware pending; CarPiHAT DAC dropped with the CarPiHAT)
+- **Power system** — resolved: Witty Pi 5 HAT+ (`wittypi_service.py`, `WITTYPI_ENABLED=1`); CarPiHAT PRO 5 dropped
 
 ---
 
@@ -143,7 +143,7 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 | `GET` | `/spotify/playlist/{id}/tracks` | Tracks in a playlist |
 | `POST` | `/spotify/play` | Play a playlist — `{"context_uri": "...", "track_uri": "..."}` |
 | `POST` | `/system/brightness` | Apply backlight brightness — `{"value": 0–255}`; returns `{"ok", "value", "detail"}` with the real outcome (`ok: false` in Docker or if the sysfs write is refused) |
-| `POST` | `/system/relay` | Control a relay — `{"name": "amp", "state": bool}` (GPIO pending CarPiHAT) |
+| `POST` | `/system/relay` | Control a relay — `{"name": "amp", "state": bool}` (logs only; no relay hardware wired) |
 | `POST` | `/system/update` | OTA update — git pull + pip install + restart |
 | `POST` | `/system/restart` | Restart service only (no code pull) |
 | `POST` | `/system/rollback` | Roll back to the previous version — undoes the most recent `/system/update` |
@@ -294,9 +294,8 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 
 **New backend services**
 - `system_service.py` — reads real CPU temp (`/sys/class/thermal/thermal_zone0/temp`), Wi-Fi state (`/sys/class/net/wlan0/operstate`), BT state (`rfkill`); falls back gracefully in Docker; includes `override_mode` and `sidelights` from `shared_state`; replaces permanent `mock_system_loop` (toggle via `SYSTEM_MOCK=1` if needed)
-- `carpihat_service.py` — GPIO skeleton for CarPiHAT PRO 5; documents pin assignments (IN1=ignition, IN2=override, IN3=sidelights, OUT1=amp relay); retained as reference only — not imported or used at runtime. Replaced by `ignition_service.py` for the dual-relay power system
-- `ignition_service.py` — GPIO ignition sense + graceful shutdown stub for dual-relay power system; not yet wired into `main.py` (pending hardware)
-- `shared_state.py` — module-level shared state between services: `gps_lat`, `gps_lon` (from Starlink GPS); `override_mode`, `sidelights_on` (from CarPiHAT)
+- *(removed 2026-08)* `carpihat_service.py` and `ignition_service.py` — dormant, never imported; power is handled by `wittypi_service.py`. See git history for the old CarPiHAT pin map
+- `shared_state.py` — module-level shared state between services: `gps_lat`, `gps_lon` (from Starlink GPS); `override_mode`, `sidelights_on` (reserved for the Witty Pi override hook)
 
 **GPS → weather integration**
 - `starlink_service.py` updates `shared_state.gps_lat/lon` when a GPS fix arrives
@@ -304,7 +303,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 
 **New REST endpoints**
 - `POST /system/brightness {"value": 0–255}` — `backlight.apply()` scales to the panel's `max_brightness` and writes `/sys/class/backlight/*/brightness`; needs the udev/`video`-group rule from `setup.sh`; reports `ok: false` in Docker
-- `POST /system/relay {"name": "amp", "state": bool}` — calls `carpihat_service.set_relay()`; GPIO pending CarPiHAT
+- `POST /system/relay {"name": "amp", "state": bool}` — self-contained no-op that only logs; no relay hardware is wired
 
 **OBD decoder correction** — complete rewrite of `decoder.py` and `service.py`:
 - Confirmed TD5 uses separate per-PID requests (not one frame)
@@ -330,7 +329,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 - Vertical layers within views: Engine (4 layers), Settings (4 layers); axis-locked touch gestures prevent diagonal swipes; `navigateTo()` API for programmatic view/layer transitions
 
 **CarPiHAT deprecation**
-- Removed all runtime references to `carpihat_service.py`; created `ignition_service.py` stub for dual-relay power system (not yet wired into `main.py` — pending hardware)
+- Removed all runtime references to `carpihat_service.py`; the file and the `ignition_service.py` stub were later deleted (2026-08) — power is the Witty Pi
 
 **Test framework**
 - 99 pytest tests covering decoder vectors, protocol checksums, WS hub connection management, mock schema validation; `pytest.ini` configuration; `tests/` directory with `conftest.py`, `test_decoder.py`, `test_protocol.py`, `test_ws_hub.py`, `test_mock_service.py`
@@ -391,10 +390,9 @@ TD5-Dash/
 │   ├── ws_hub.py           # WebSocket connection manager
 │   ├── db.py               # SQLite settings/pages/engine_history database
 │   ├── mock_service.py     # Static mock data for all six topics
-│   ├── shared_state.py     # Module-level shared state (GPS coords, CarPiHAT state)
+│   ├── shared_state.py     # Module-level shared state (GPS coords, override/sidelights state)
 │   ├── system_service.py   # Real CPU temp, backlight, Wi-Fi/BT monitoring
-│   ├── carpihat_service.py # GPIO skeleton — retained as reference; not imported or used at runtime
-│   ├── ignition_service.py # GPIO ignition sense + graceful shutdown (stub until hardware)
+│   ├── wittypi_service.py  # Witty Pi 5 power management (WITTYPI_ENABLED=1)
 │   ├── spotify_auth.py     # OAuth token manager (refresh + in-memory cache)
 │   ├── spotify_service.py  # Spotify Web API polling + playlist/command/like
 │   ├── weather_service.py  # Open-Meteo polling + stale detection (uses GPS coords)
@@ -448,5 +446,5 @@ TD5-Dash/
 - **P3 inter-message gap (55ms)** — mandatory when engine is running; ECU drops requests without it
 - **ECU session persistence** — session survives fast-init pulses; must send StopCommunication (0x82) to clear leftover sessions
 - **Boot target** — <10 seconds to kiosk live (Phase 5 concern)
-- **Pi 5 has no 3.5mm jack** — audio via CarPiHAT DAC, BT A2DP, or USB DAC
+- **Pi 5 has no 3.5mm jack** — audio via BT A2DP or a USB DAC
 - **Spotify API (Feb 2026)** — library endpoints unified under `/me/library`; redirect URI must use `127.0.0.1` not `localhost`; playlist item field is `item` not `track`
