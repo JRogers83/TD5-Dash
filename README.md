@@ -336,6 +336,9 @@ TD5-Dash/
 │   ├── spotify_auth.py     # OAuth token manager (refresh + cache)
 │   ├── spotify_service.py  # Spotify Web API polling + playlist/command functions
 │   ├── weather_service.py  # Open-Meteo polling service
+│   ├── update_service.py   # OTA code update / rollback (git)
+│   ├── provision_service.py # OTA system provisioning — diff + apply OS packages
+│   ├── backlight.py        # Display backlight control + boot-time apply
 │   ├── starlink_service.py # Starlink gRPC polling service
 │   ├── obd/                # TD5 K-Line OBD service
 │   │   ├── service.py
@@ -360,6 +363,8 @@ TD5-Dash/
 │
 ├── deploy/
 │   ├── setup.sh            # Pi first-time setup script (run as root)
+│   ├── ota-provision.sh    # Root apply script behind Settings → Software → System
+│   ├── system/             # Desired OS state: packages.txt, remove.txt, optional cleanup.sh
 │   ├── td5-dash.service    # systemd service template
 │   └── xinitrc             # Chromium kiosk X session script
 │
@@ -396,7 +401,43 @@ The backend broadcasts per-topic JSON messages. Each view subscribes to one or m
 | `GET` | `/spotify/playlist/{id}/tracks` | Tracks in a playlist |
 | `POST` | `/spotify/play` | Play a playlist from a specific track — `{"context_uri": "...", "track_uri": "..."}` |
 
+| `GET` | `/system/provision` | System packages: desired (from `deploy/system/`) vs installed — `{available, up_to_date, pending_install, pending_remove, cleanup_present}` |
+| `POST` | `/system/provision/apply` | Install/purge to match the repo (root, via sudo) — `{ok, output, needs_setup, status}` |
+
 Interactive API docs available at `http://localhost:8000/docs` when running.
+
+---
+
+## Updating a vehicle: code vs system
+
+Settings → **Software** has two independent columns:
+
+- **Code** — *Check for Updates* (`git pull` + pip, then restart) and *Roll Back*. Reversible.
+- **System** — *Apply Changes* installs or purges OS packages so the machine matches
+  `deploy/system/packages.txt` / `remove.txt` (and runs `cleanup.sh` if present). It is
+  **forward-only**, never runs automatically, and a code rollback does not undo it. After a
+  code update that needs a new package, the panel just shows it as pending (amber dot).
+
+To give the vehicle a new system dependency: add the package name to `deploy/system/packages.txt`,
+merge, run *Check for Updates*, then press *Apply Changes*. `setup.sh` installs from the same file,
+so fresh installs and updates cannot drift.
+
+**One-time step on existing installs:** *Apply Changes* needs a sudoers rule that earlier versions
+of `setup.sh` did not install. Re-run `sudo ./deploy/setup.sh` on the Pi once; until then the panel
+reports "One-time setup needed". The same re-run installs the udev rule that lets the dash set the
+screen backlight.
+
+### Governance (root-capable files)
+
+`deploy/ota-provision.sh`, `deploy/system/*` and `deploy/setup.sh` effectively give the git remote root
+on every vehicle that presses *Apply Changes*. Today the only guard is that just the owner can merge to
+`main`. `.github/CODEOWNERS` and a PR-flagging workflow are in place for when that changes. To make
+them binding, switch these on for `main` in GitHub → Settings → Branches (not enabled yet, so the
+solo push workflow is unaffected):
+
+- Require a pull request before merging, with **1** approving review
+- **Require review from Code Owners**
+- (optional) Do not allow bypassing the above settings
 
 ---
 

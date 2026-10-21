@@ -1136,6 +1136,7 @@ function toggleRelay(name) {
   _relayState['amp'] = false;
   _applyRelayUI('amp');
   refreshVersionInfo();
+  refreshSystemStatus();
 }());
 
 // ── OTA update ─────────────────────────────────
@@ -1168,13 +1169,82 @@ async function triggerUpdate() {
     lbl.textContent = 'Check for Updates';
     // Leave status text visible so user can see what changed
     refreshVersionInfo();  // update just moved HEAD — refresh the rollback target
+    refreshSystemStatus(); // new code may need new system packages — show them as pending
   };
   document.addEventListener('td5-ws-connected', _resetBtn, { once: true });
   // Fallback: reset after 30 s if reconnect event never fires
   setTimeout(_resetBtn, 30_000);
 }
 
-// ── OTA rollback ───────────────────────────────
+// ── OTA system provisioning (Settings → Software → System) ─────────────────
+// Reconciles the OS to the repo's deploy/system/*.txt. Forward-only and always
+// user-initiated: after a code update the panel just lists what is pending.
+function _renderSystemStatus(st) {
+  const btn = document.getElementById('btn-system-apply');
+  if (!st || st.available === false) {
+    setTxt('txt-system-status', 'Unavailable on this host');
+    setCls('dot-system-pending', 'status-dot off');
+    if (btn) btn.disabled = true;
+    return;
+  }
+  if (st.up_to_date) {
+    setTxt('txt-system-status', 'Up to date');
+    setCls('dot-system-pending', 'status-dot on');
+    if (btn) btn.disabled = true;
+    return;
+  }
+  const adds = (st.pending_install || []).map(p => `+${p}`);
+  const rems = (st.pending_remove || []).map(p => `\u2212${p}`);
+  const n = adds.length + rems.length;
+  setTxt('txt-system-status', `${n} pending: ${[...adds, ...rems].join('  ')}`);
+  setCls('dot-system-pending', 'status-dot warn');
+  if (btn) btn.disabled = false;
+}
+
+async function refreshSystemStatus() {
+  try {
+    const r = await fetch('/system/provision');
+    _renderSystemStatus(await r.json());
+  } catch (_) {
+    // Backend not reachable yet (e.g. mid-restart) — leave the panel as-is.
+  }
+}
+
+async function applySystemChanges() {
+  const btn    = document.getElementById('btn-system-apply');
+  const lbl    = document.getElementById('lbl-system-apply');
+  const status = document.getElementById('system-status');
+  if (!btn || btn.disabled) return;
+
+  btn.disabled = true;
+  lbl.textContent = 'Applying…';
+  status.textContent = '';
+  status.className = 'update-status update-status--scroll';
+
+  try {
+    const r    = await fetch('/system/provision/apply', { method: 'POST' });
+    const data = await r.json();
+    if (data.needs_setup) {
+      status.textContent = 'One-time setup needed: run "sudo ./deploy/setup.sh" on the Pi, then try again.';
+      status.className   = 'update-status update-status--scroll update-status--err';
+    } else if (data.ok) {
+      status.textContent = data.output;
+      status.className   = 'update-status update-status--scroll update-status--ok';
+    } else {
+      status.textContent = data.output || 'Apply failed.';
+      status.className   = 'update-status update-status--scroll update-status--err';
+    }
+    if (data.status) _renderSystemStatus(data.status);
+  } catch (_) {
+    status.textContent = 'Could not reach the dash.';
+    status.className   = 'update-status update-status--scroll update-status--err';
+    btn.disabled = false;       // request never completed — let the user retry
+    refreshSystemStatus();      // ...and re-sync the button with the real state
+  }
+  lbl.textContent = 'Apply Changes';
+}
+
+// ── OTA rollback ───────────────────────────────────
 function _setRollbackButton(target) {
   const btn = document.getElementById('btn-rollback');
   const lbl = document.getElementById('lbl-rollback');
@@ -1505,6 +1575,11 @@ const NAV = (() => {
     if (viewIdx === 0 && layerDomIdx === 2 && typeof loadHistory === 'function') {
       const active = document.querySelector('.stats-range-btn--active');
       loadHistory(active ? active.dataset.range : 'hour');
+    }
+    // Settings (view 4) → Software (layer 1): show current pending system changes.
+    if (viewIdx === 4 && layerDomIdx === 1) {
+      refreshVersionInfo();
+      refreshSystemStatus();
     }
     // Raw Data (Engine layer 3) is only repainted while visible — paint it now.
     if (viewIdx === 0 && layerDomIdx === 3 && _lastEngine) _updateRawData(_lastEngine);

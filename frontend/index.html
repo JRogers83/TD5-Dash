@@ -767,11 +767,11 @@
           </div>
         </div>
 
-        <!-- Layer 1: Software (OTA update & rollback) -->
+        <!-- Layer 1: Software — Code (OTA update & rollback) | System (OTA provisioning) -->
         <div class="layer" data-layer="1">
           <div class="software-content">
             <div class="software-panel">
-              <div class="software-title">Software</div>
+              <div class="software-title">Code</div>
               <div class="software-version-row">
                 <span class="software-version-label">Current Version</span>
                 <span class="software-version" id="txt-version">—</span>
@@ -789,6 +789,30 @@
                 </button>
               </div>
               <div class="update-status" id="update-status"></div>
+            </div>
+
+            <div class="vdivider"></div>
+
+            <!-- System: install/remove OS packages the code needs. Forward-only, never automatic. -->
+            <div class="software-panel" id="system-panel">
+              <div class="software-title">
+                System
+                <span class="status-dot" id="dot-system-pending"></span>
+              </div>
+              <div class="software-version-row">
+                <span class="software-version-label">Status</span>
+                <span class="software-version software-version--wrap" id="txt-system-status">—</span>
+              </div>
+              <p class="software-help">
+                <b>Apply Changes</b> installs or removes system packages the current code needs.
+                It never runs on its own, and Roll Back does not undo it.
+              </p>
+              <div class="software-actions">
+                <button class="relay-btn relay-btn--primary" id="btn-system-apply" onclick="applySystemChanges()" disabled>
+                  <span class="relay-btn__label" id="lbl-system-apply">Apply Changes</span>
+                </button>
+              </div>
+              <div class="update-status update-status--scroll" id="system-status"></div>
             </div>
           </div>
         </div>

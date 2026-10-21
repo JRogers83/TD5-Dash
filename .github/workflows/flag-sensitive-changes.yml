@@ -1,0 +1,56 @@
+# Make a root-capable change impossible to miss: label the PR and leave a warning.
+#
+# Uses pull_request_target so the token can write labels/comments on PRs from forks.
+# This is safe ONLY because the workflow never checks out or executes PR code — it
+# just writes a label and a comment through the API.
+name: Flag security-sensitive changes
+
+on:
+  pull_request_target:
+    paths:
+      - 'deploy/system/**'
+      - 'deploy/ota-provision.sh'
+      - 'deploy/setup.sh'
+      - '.github/**'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  flag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const label = 'security-sensitive';
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request.number;
+
+            // Create the label on first use (422 = already exists).
+            try {
+              await github.rest.issues.createLabel({
+                owner, repo, name: label, color: 'b60205',
+                description: 'Touches files that run as root on the vehicle or guard them',
+              });
+            } catch (e) { if (e.status !== 422) throw e; }
+
+            await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: [label] });
+
+            const marker = '<!-- td5-security-sensitive -->';
+            const comments = await github.paginate(github.rest.issues.listComments,
+              { owner, repo, issue_number: number });
+            if (comments.some(c => c.body && c.body.includes(marker))) return;
+
+            await github.rest.issues.createComment({ owner, repo, issue_number: number, body: [
+              marker,
+              '### ⚠️ Security-sensitive change',
+              'This PR touches files that run **as root** on the vehicle when "Apply Changes" is',
+              'pressed in the OTA System panel (`deploy/ota-provision.sh`, `deploy/system/**`,',
+              '`deploy/setup.sh`) or the protections that guard them (`.github/**`).',
+              '',
+              'Review as if it were a root shell: check every package added to `packages.txt`,',
+              'every line of `cleanup.sh`, and any change to the sudoers rule in `setup.sh`.',
+            ].join('\n') });

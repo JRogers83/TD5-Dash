@@ -445,6 +445,15 @@ html, body {
   color: var(--text);
 }
 
+.update-status--scroll {
+  max-height: 76px;
+  overflow-y: auto;
+}
+
+.update-status--err {
+  color: var(--c-amber);
+}
+
 /* ── Relay (amplifier) toggle ─────────────────── */
 .relay-btn {
   width: 100%;
@@ -532,13 +541,15 @@ html, body {
 .software-content {
   flex: 1;
   display: flex;
-  align-items: center;
+  align-items: flex-start;   /* Code and System titles share one baseline */
   justify-content: center;
-  padding: 16px 24px;
+  gap: 24px;
+  padding: 56px 24px 16px;
 }
 
 .software-panel {
-  width: 100%;
+  flex: 1 1 0;
+  min-width: 0;
   max-width: 760px;
   display: flex;
   flex-direction: column;
@@ -546,6 +557,9 @@ html, body {
 }
 
 .software-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: 24px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -575,6 +589,12 @@ html, body {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text);
+}
+
+.software-version--wrap {
+  text-align: right;
+  font-size: 18px;
+  overflow-wrap: anywhere;
 }
 
 .software-help {

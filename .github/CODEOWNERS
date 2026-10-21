@@ -1,0 +1,10 @@
+# Code owners for root-capable paths.
+#
+# deploy/ota-provision.sh, deploy/system/* and deploy/setup.sh run as root on the
+# vehicle (the OTA "System" panel applies them), and .github/ holds the protections
+# below — so changes to any of them need the owner's review.
+#
+# NOTE: GitHub only *enforces* CODEOWNERS once branch protection on `main` has
+# "Require review from Code Owners" switched on. See "Governance" in README.md.
+/deploy/    @JRogers83
+/.github/   @JRogers83

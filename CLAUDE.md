@@ -148,6 +148,8 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 | `POST` | `/system/restart` | Restart service only (no code pull) |
 | `POST` | `/system/rollback` | Roll back to the previous version — undoes the most recent `/system/update` |
 | `GET` | `/system/version` | Current commit + rollback availability, for the Settings UI |
+| `GET` | `/system/provision` | System packages desired (`deploy/system/*.txt`) vs installed — `{available, up_to_date, pending_install, pending_remove, cleanup_present}`; no root |
+| `POST` | `/system/provision/apply` | Run `deploy/ota-provision.sh` via sudo (install/purge/cleanup). Forward-only, user-initiated, never restarts the service. Returns `{ok, output, needs_setup, status}` |
 
 ---
 
@@ -393,6 +395,9 @@ TD5-Dash/
 │   ├── shared_state.py     # Module-level shared state (GPS coords, override/sidelights state)
 │   ├── system_service.py   # Real CPU temp, backlight, Wi-Fi/BT monitoring
 │   ├── wittypi_service.py  # Witty Pi 5 power management (WITTYPI_ENABLED=1)
+│   ├── update_service.py   # OTA code update/rollback (git + pip only — no apt)
+│   ├── provision_service.py # OTA system provisioning: diff + apply deploy/system/ manifests
+│   ├── backlight.py        # Backlight sysfs write (scaled to max_brightness) + boot-time apply
 │   ├── spotify_auth.py     # OAuth token manager (refresh + in-memory cache)
 │   ├── spotify_service.py  # Spotify Web API polling + playlist/command/like
 │   ├── weather_service.py  # Open-Meteo polling + stale detection (uses GPS coords)
@@ -427,7 +432,9 @@ TD5-Dash/
 │   ├── test_ws_hub.py
 │   └── test_mock_service.py
 └── deploy/
-    ├── setup.sh            # Pi first-time setup script (run as root)
+    ├── setup.sh            # Pi first-time setup script (run as root); installs apt packages from system/packages.txt
+    ├── ota-provision.sh    # Root apply script (sudoers rule points here) — CODEOWNERS-gated
+    ├── system/             # packages.txt (single source of truth for apt packages), remove.txt, optional cleanup.sh
     ├── td5-dash.service    # systemd unit template
     ├── xinitrc             # Chromium kiosk X session
     └── plymouth/
