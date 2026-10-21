@@ -178,3 +178,20 @@ def test_get_version_info_with_history():
 
     assert info["rollback_available"] == 2
     assert info["rollback_target"] == f"described:{'b' * 40}"
+
+
+# ── System packages are no longer part of a code update ──────────────────────
+
+def test_reinstall_deps_never_runs_apt(monkeypatch, tmp_path):
+    """System changes are forward-only and live behind the System panel, so a code
+    update/rollback must not touch apt (spec: OTA system provisioning §5)."""
+    pip = tmp_path / "pip"
+    pip.write_text("")
+    monkeypatch.setattr(svc, "VENV_PIP", pip)
+    run = MagicMock(return_value=_git_result())
+    with patch.object(svc.subprocess, "run", run):
+        svc.reinstall_deps()
+    argvs = [c.args[0] for c in run.call_args_list]
+    assert len(argvs) == 1 and argvs[0][0] == str(pip)
+    assert not any("apt-get" in a for argv in argvs for a in argv)
+    assert not hasattr(svc, "_APT_PACKAGES")

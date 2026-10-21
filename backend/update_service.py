@@ -28,12 +28,6 @@ log = logging.getLogger(__name__)
 REPO_DIR = Path(__file__).resolve().parent.parent
 VENV_PIP = REPO_DIR / ".venv" / "bin" / "pip"
 
-_APT_PACKAGES = [
-    "freedoom", "openbox", "libsamplerate0", "python3-evdev",
-    "fonts-noto-color-emoji",
-]
-
-
 class GitError(Exception):
     """Raised when a git operation fails. Message is the combined stdout/stderr."""
 
@@ -77,7 +71,10 @@ def describe_commit(commit_hash: str) -> str:
 
 
 def reinstall_deps() -> None:
-    """Reinstall Python deps and apt packages for the currently-checked-out commit.
+    """Reinstall Python deps for the currently-checked-out commit.
+
+    System (apt) packages are deliberately NOT touched here: they are forward-only
+    and live behind the separate, user-initiated System panel (provision_service).
 
     Best-effort: failures are logged but never raised, so a broken package
     manager never blocks an update/rollback from completing.
@@ -91,14 +88,6 @@ def reinstall_deps() -> None:
         if pip_result.returncode != 0:
             log.warning("OTA pip install failed (rc=%d): %s", pip_result.returncode,
                         (pip_result.stderr or pip_result.stdout).strip()[:200])
-
-    apt_result = subprocess.run(
-        ["sudo", "apt-get", "install", "-y", *_APT_PACKAGES],
-        capture_output=True, text=True,
-    )
-    if apt_result.returncode != 0:
-        log.warning("OTA apt-get failed (rc=%d): %s", apt_result.returncode,
-                    (apt_result.stderr or apt_result.stdout).strip()[:200])
 
 
 def perform_update() -> dict:

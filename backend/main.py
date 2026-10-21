@@ -17,6 +17,7 @@ from pydantic import BaseModel
 import backlight
 import db
 import game_service
+import provision_service
 import spotify_service
 import system_service
 import update_service
@@ -528,6 +529,26 @@ async def system_rollback():
 async def system_version() -> dict:
     """Current commit + rollback availability, for the Settings UI."""
     return update_service.get_version_info()
+
+
+# ── System: provisioning (OTA system packages — separate from code update) ──────
+
+@app.get("/system/provision")
+async def system_provision_status() -> dict:
+    """Desired-vs-actual system state from deploy/system/*. No root needed."""
+    return await asyncio.to_thread(provision_service.get_status)
+
+
+@app.post("/system/provision/apply")
+async def system_provision_apply() -> dict:
+    """Run the root provisioner (install/purge/cleanup). User-initiated, forward-only.
+
+    Does not restart the service — no code changed. Blocking apt work runs in a
+    thread; returns {ok, output, needs_setup} plus the refreshed status.
+    """
+    result = await asyncio.to_thread(provision_service.apply)
+    result["status"] = await asyncio.to_thread(provision_service.get_status)
+    return result
 
 
 @app.post("/system/restart")

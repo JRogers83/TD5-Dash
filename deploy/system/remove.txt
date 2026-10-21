@@ -1,0 +1,5 @@
+# TD5 Dash — system packages that must be ABSENT.
+#
+# Anything listed here that is installed is purged when "Apply Changes" is pressed
+# in the System panel. Forward-only: a code rollback never re-installs these.
+# One package per line; '#' comments and blank lines are ignored.

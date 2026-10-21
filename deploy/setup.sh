@@ -25,30 +25,12 @@ echo ""
 # ── System packages ────────────────────────────────────────────────────────────
 echo "▸ Installing system packages..."
 apt-get update -qq
-apt-get install -y --no-install-recommends \
-    python3-venv \
-    python3-pil \
-    chromium \
-    xserver-xorg-core \
-    xserver-xorg-input-evdev \
-    x11-xserver-utils \
-    xinit \
-    unclutter \
-    plymouth \
-    plymouth-themes \
-    curl \
-    freedoom \
-    python3-evdev \
-    xdotool \
-    python3-gi \
-    gir1.2-gtk-3.0 \
-    openbox \
-    libsamplerate0 \
-    gpsd \
-    gpsd-clients \
-    python3-gps \
-    feh \
-    fonts-noto-color-emoji
+# Package list lives in deploy/system/packages.txt — the same file the OTA
+# "System" panel reconciles against, so fresh installs and updates never drift.
+PKG_MANIFEST="$SCRIPT_DIR/system/packages.txt"
+mapfile -t SYSTEM_PACKAGES < <(sed 's/#.*//' "$PKG_MANIFEST" | tr -d '\r' \
+    | awk 'NF==1 && $1 ~ /^[a-z0-9][a-z0-9+.-]*$/ { print $1 }')
+apt-get install -y --no-install-recommends "${SYSTEM_PACKAGES[@]}"
 
 # ── GPS (USB receiver via gpsd) ────────────────────────────────────────────────
 echo "▸ Configuring gpsd for u-blox USB GPS receiver..."
@@ -311,18 +293,33 @@ udevadm trigger --subsystem-match=backlight --action=add 2>/dev/null || true
 echo "  Wrote /etc/udev/rules.d/99-td5-backlight.rules"
 
 # ── Sudoers: passwordless commands for the service user ───────────────────────
-# restart td5-dash:           required for OTA update endpoint (POST /system/update)
-# shutdown -h now:            required for shutdown endpoint (POST /system/shutdown)
-# apt-get install freedoom:   required for OTA update to install/upgrade freedoom
-echo "▸ Configuring sudoers for service restart, shutdown, and apt..."
+# restart td5-dash:     required for the OTA update/restart endpoints
+# shutdown -h now:      required for POST /system/shutdown
+# ota-provision.sh:     the ONE rule behind the Settings -> Software -> System panel.
+#                       It installs/purges packages from deploy/system/*.txt, so system
+#                       dependencies can change by editing the repo — this file never
+#                       needs touching again. NOTE: existing installs must re-run
+#                       `sudo ./deploy/setup.sh` once to pick this rule up (the old rule
+#                       pinned an exact apt-get package list).
+echo "▸ Configuring sudoers for service restart, shutdown, and system provisioning..."
 SUDOERS_FILE="/etc/sudoers.d/td5-dash"
-cat > "$SUDOERS_FILE" <<EOF
+SUDOERS_TMP="$(mktemp)"
+cat > "$SUDOERS_TMP" <<EOF
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart td5-dash
 $SERVICE_USER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
-$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y freedoom openbox libsamplerate0 python3-evdev fonts-noto-color-emoji
+$SERVICE_USER ALL=(ALL) NOPASSWD: $REPO_DIR/deploy/ota-provision.sh apply
 EOF
-chmod 440 "$SUDOERS_FILE"
-echo "  Sudoers entry written to $SUDOERS_FILE"
+# A syntax error in a sudoers.d file can lock out sudo entirely — validate first.
+if visudo -cf "$SUDOERS_TMP" >/dev/null; then
+    install -m 440 -o root -g root "$SUDOERS_TMP" "$SUDOERS_FILE"
+    echo "  Sudoers entry written to $SUDOERS_FILE"
+else
+    echo "ERROR: generated sudoers rule failed validation — leaving $SUDOERS_FILE untouched" >&2
+    rm -f "$SUDOERS_TMP"
+    exit 1
+fi
+rm -f "$SUDOERS_TMP"
+chmod +x "$REPO_DIR/deploy/ota-provision.sh"
 
 # ── Plymouth splash screen ─────────────────────────────────────────────────────
 echo "▸ Installing Plymouth splash screen..."

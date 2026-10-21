@@ -223,3 +223,36 @@ manifest. Human review on the sensitive paths is the control.
 - System-change rollback / snapshotting.
 - Auto-apply / scheduled provisioning.
 - Signed manifests / release pinning (revisit if the contributor base grows).
+
+## 12. Implementation notes (deviations from the design above)
+
+Recorded after implementation; the design intent is unchanged.
+
+- **`apt-get update` first.** `ota-provision.sh` refreshes package lists before installing
+  (non-fatal if offline). A Pi that is rarely online has stale lists, and `install` would 404.
+- **`--no-install-recommends`.** Matches `setup.sh`, so fresh installs and OTA applies yield the
+  same package set.
+- **`setup.sh` installs from `deploy/system/packages.txt`** instead of its own hard-coded list.
+  This is what actually removes the drift described in the Problem section. The manifest was
+  seeded from the old `setup.sh` list (verified identical set; 23 packages). `gpsd`, `gpsd-clients`,
+  `python3-gps` and `feh` were already in `setup.sh`; they only ever missed the OTA list.
+- **Package-name validation** (`^[a-z0-9][a-z0-9+.-]*$`) in both `provision_service.read_manifest`
+  and `ota-provision.sh`, so a manifest line can never become an apt option (`-o...`).
+- **sudoers is validated with `visudo -cf`** before it replaces `/etc/sudoers.d/td5-dash`; a syntax
+  error there can lock out sudo entirely.
+- **Status adds `available`** (False on hosts without `dpkg`, e.g. Windows dev) so the UI shows the
+  panel as unavailable rather than listing every package as pending. **Apply adds `needs_setup`**
+  (sudo refused → the one-time `setup.sh` re-run has not happened) and returns the refreshed `status`.
+- **No `cleanup.sh` ships.** The hook is supported but absent, keeping the root attack surface empty
+  until something needs it.
+- **Concurrent applies are rejected** (non-blocking lock) rather than queued.
+
+### Known residual risk (not addressed by this design)
+
+The sudoers rule names `<repo>/deploy/ota-provision.sh`, and the repo is writable by the service
+user. Anything that can already run code as that user (for example a compromised Chromium renderer
+escaping to the user account) can edit the script or `cleanup.sh` and then run it as root via
+sudo — a *local* privilege escalation, separate from the "git remote has root" risk §8 accepts.
+Mitigation if this matters: have `setup.sh` install a root-owned copy of the script outside the repo
+(e.g. `/usr/local/lib/td5-dash/`) and point sudoers at that; `cleanup.sh` would then have to move
+out of the repo too, which loses the version-controlled flexibility. Left as an explicit decision.

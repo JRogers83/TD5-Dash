@@ -1,0 +1,45 @@
+# TD5 Dash — system packages that must be present.
+#
+# Single source of truth: deploy/setup.sh installs from this file on a fresh
+# install, and the Settings → Software → System panel installs anything missing
+# on an existing one (via deploy/ota-provision.sh). One package per line;
+# '#' comments and blank lines are ignored. Names are lower-case Debian packages.
+#
+# Adding a line here is how a new system dependency reaches the vehicle: merge,
+# update the code, then press "Apply Changes" in the System panel.
+
+# Python / build
+python3-venv
+python3-pil
+python3-evdev
+python3-gi
+python3-gps
+gir1.2-gtk-3.0
+
+# Kiosk display session
+chromium
+xserver-xorg-core
+xserver-xorg-input-evdev
+x11-xserver-utils
+xinit
+unclutter
+xdotool
+openbox
+# holds the Land Rover logo on the X root between Plymouth and Chromium first paint
+feh
+fonts-noto-color-emoji
+
+# Boot splash
+plymouth
+plymouth-themes
+
+# Backend / tooling
+curl
+
+# GPS (USB receiver via gpsd)
+gpsd
+gpsd-clients
+
+# Doom game mode
+freedoom
+libsamplerate0
