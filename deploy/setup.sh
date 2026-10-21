@@ -296,6 +296,20 @@ usermod -aG input "$SERVICE_USER"
 echo "  Done. NOTE: on existing installs, log out and back in (or reboot)"
 echo "  for this to take effect — 'systemctl restart td5-dash' alone is NOT sufficient."
 
+# ── Backlight: let the service user set the display brightness ────────────────
+# /sys/class/backlight/*/brightness is root-only by default, so the backend (which
+# runs as $SERVICE_USER) could not apply the saved brightness at boot or from the
+# Settings screen. Grant group 'video' write access via udev and add the user to it.
+# The td5-dash systemd unit picks up the group on its next start (no re-login needed).
+echo "▸ Granting backlight write access to the 'video' group..."
+usermod -aG video "$SERVICE_USER"
+cat > /etc/udev/rules.d/99-td5-backlight.rules <<'EOF'
+ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness"
+EOF
+udevadm control --reload-rules 2>/dev/null || true
+udevadm trigger --subsystem-match=backlight --action=add 2>/dev/null || true
+echo "  Wrote /etc/udev/rules.d/99-td5-backlight.rules"
+
 # ── Sudoers: passwordless commands for the service user ───────────────────────
 # restart td5-dash:           required for OTA update endpoint (POST /system/update)
 # shutdown -h now:            required for shutdown endpoint (POST /system/shutdown)

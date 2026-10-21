@@ -42,7 +42,6 @@ _MOCK: dict = {
         "device_name": "Defender",
     },
     "system": {
-        "brightness":     180,
         "override_mode":  False,
         "wifi_connected": False,
         "bt_connected":   False,

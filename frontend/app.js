@@ -967,29 +967,36 @@ function handleSystem(d) {
 }
 
 // ── Settings: brightness & relay controls ──────
-// Brightness values (0–255) are stored per mode in localStorage and applied
-// immediately to the Pi backlight via POST /system/brightness.
-// Mode ('day'/'night') switches automatically when the sidelights signal
+// Day/night levels (0–255) and the active mode live in the backend settings DB
+// (brightness_day / brightness_night / brightness_mode) so they survive a
+// browser-cache wipe (OTA update clears Chromium's profile) and so the backend
+// can set the real backlight at boot, before any browser is running.
+// Changes are saved with POST /settings and applied with POST /system/brightness.
+// Mode ('day'/'night') also switches automatically when the sidelights signal
 // changes (system payload: d.sidelights = true → Day, false → Night).
 // The user can still override the mode manually via the Settings buttons.
 
 // Tracks the last known sidelights state so we only react to changes.
 let _prevSidelights = null;
 
-const _BRIGHT_DEF = { day: 180, night: 80 };
+const _BRIGHT_DEF = { day: 180, night: 80, mode: 'day' };
+let _bright = { ..._BRIGHT_DEF };
 
-function _loadBrightPrefs() {
-  return {
-    day:  Math.min(255, Math.max(0, parseInt(localStorage.getItem('td5_bright_day')   ?? _BRIGHT_DEF.day))),
-    night:Math.min(255, Math.max(0, parseInt(localStorage.getItem('td5_bright_night') ?? _BRIGHT_DEF.night))),
-    mode: localStorage.getItem('td5_lights_mode') || 'day',
-  };
+function _clampBright(v, fallback) {
+  const n = parseInt(v, 10);
+  return Number.isNaN(n) ? fallback : Math.min(255, Math.max(0, n));
 }
 
-function _saveBrightPrefs(p) {
-  localStorage.setItem('td5_bright_day',   p.day);
-  localStorage.setItem('td5_bright_night', p.night);
-  localStorage.setItem('td5_lights_mode',  p.mode);
+function _saveBright() {
+  fetch('/settings', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      brightness_day:   _bright.day,
+      brightness_night: _bright.night,
+      brightness_mode:  _bright.mode,
+    }),
+  }).catch(() => {});
 }
 
 function _applyBrightUI(p) {
@@ -1008,20 +1015,45 @@ function _postBrightness(value) {
 }
 
 function setBrightMode(mode) {
-  const p = _loadBrightPrefs();
-  p.mode  = mode;
-  _saveBrightPrefs(p);
-  _applyBrightUI(p);
-  _postBrightness(p[mode]);
+  _bright.mode = mode;
+  _saveBright();
+  _applyBrightUI(_bright);
+  _postBrightness(_bright[mode]);
 }
 
 function adjustBrightness(which, delta) {
-  const p   = _loadBrightPrefs();
-  p[which]  = Math.min(255, Math.max(0, p[which] + delta));
-  _saveBrightPrefs(p);
-  _applyBrightUI(p);
-  // Only send to Pi if this mode is currently active
-  if (p.mode === which) _postBrightness(p[which]);
+  _bright[which] = _clampBright(_bright[which] + delta, _BRIGHT_DEF[which]);
+  _saveBright();
+  _applyBrightUI(_bright);
+  // Only send to the panel if this mode is currently active
+  if (_bright.mode === which) _postBrightness(_bright[which]);
+}
+
+// Load persisted levels from the backend. The backend has already applied the
+// active level to the backlight at startup; this only syncs the Settings UI.
+// One-time migration: levels previously kept in localStorage are pushed into
+// the DB (and applied), then the old keys are removed.
+function _loadBrightFromSettings(settings) {
+  _bright = {
+    day:   _clampBright(settings.brightness_day,   _BRIGHT_DEF.day),
+    night: _clampBright(settings.brightness_night, _BRIGHT_DEF.night),
+    mode:  settings.brightness_mode === 'night' ? 'night' : 'day',
+  };
+  try {
+    const od = localStorage.getItem('td5_bright_day');
+    const on = localStorage.getItem('td5_bright_night');
+    const om = localStorage.getItem('td5_lights_mode');
+    if (od !== null || on !== null || om !== null) {
+      _bright.day   = _clampBright(od, _bright.day);
+      _bright.night = _clampBright(on, _bright.night);
+      if (om === 'day' || om === 'night') _bright.mode = om;
+      _saveBright();
+      _postBrightness(_bright[_bright.mode]);
+      ['td5_bright_day', 'td5_bright_night', 'td5_lights_mode']
+        .forEach(k => localStorage.removeItem(k));
+    }
+  } catch (_) {}
+  _applyBrightUI(_bright);
 }
 
 // Relay (amplifier) — state persisted in localStorage
@@ -1054,7 +1086,7 @@ function toggleRelay(name) {
 
 // Initialise settings controls on load
 (function _initSettings() {
-  _applyBrightUI(_loadBrightPrefs());
+  _applyBrightUI(_bright);
   _relayState['amp'] = _loadRelayState('amp');
   _applyRelayUI('amp');
   refreshVersionInfo();
@@ -2193,6 +2225,7 @@ function connect() {
       _speedUnit = settings.speed_unit;
     }
     _updateSpeedUnitButtons();
+    _loadBrightFromSettings(settings);
   } catch (_) {}
 
   connect();

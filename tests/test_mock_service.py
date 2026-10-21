@@ -45,7 +45,6 @@ EXPECTED_SCHEMAS = {
         "device_name":   str,
     },
     "system": {
-        "brightness":     (int, float),
         "override_mode":  bool,
         "wifi_connected": bool,
         "bt_connected":   bool,
@@ -203,9 +202,6 @@ class TestMockValueSanity:
 
     def test_soc_percentage_range(self):
         assert 0 <= _MOCK["victron"]["soc_pct"] <= 100
-
-    def test_brightness_range(self):
-        assert 0 <= _MOCK["system"]["brightness"] <= 255
 
     def test_gps_fix_is_valid(self):
         assert _MOCK["gps"]["fix"] in (0, 2, 3)

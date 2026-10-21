@@ -1,6 +1,6 @@
 """
 System monitoring service — CPU temperature, load, memory, disk, uptime,
-backlight brightness, and basic connectivity state.
+and basic connectivity state.
 
 Broadcasts {"type": "system", ...} every PUBLISH_INTERVAL_S seconds.
 
@@ -15,7 +15,6 @@ Configuration:
 from __future__ import annotations
 
 import asyncio
-import glob
 import logging
 import os
 import shutil
@@ -30,7 +29,6 @@ PUBLISH_INTERVAL_S = float(os.getenv("SYSTEM_PUBLISH_INTERVAL", "2.0"))
 
 # sysfs paths
 _THERMAL_PATH   = "/sys/class/thermal/thermal_zone0/temp"
-_BACKLIGHT_GLOB = "/sys/class/backlight/*/brightness"
 _WIFI_PATH      = "/sys/class/net/wlan0/operstate"
 
 # CPU load — computed as a delta between successive reads (no sleep needed).
@@ -135,17 +133,6 @@ def _read_throttle() -> bool | None:
         return None
 
 
-def _read_brightness() -> int:
-    """Return current backlight brightness (0–255), or -1 if unavailable."""
-    try:
-        paths = glob.glob(_BACKLIGHT_GLOB)
-        if not paths:
-            return -1
-        return int(open(paths[0]).read().strip())
-    except Exception:
-        return -1
-
-
 def _read_wifi() -> bool:
     """Return True if wlan0 operstate is 'up'."""
     try:
@@ -185,7 +172,6 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
         disk      = _read_disk_usage()
         uptime    = _read_uptime()
         throttle  = _read_throttle()
-        brightness = _read_brightness()
         wifi      = _read_wifi()
         bt        = _read_bt()
 
@@ -196,7 +182,6 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
             "disk_usage_pct": disk      if disk      >= 0 else None,
             "uptime_s":       uptime    if uptime    >= 0 else None,
             "throttled":      throttle,   # None = not available, True/False on Pi
-            "brightness":     brightness if brightness >= 0 else None,
             "wifi_connected": wifi,
             "bt_connected":   bt,
             # GPIO state — updated via shared_state (ignition_service in future)
