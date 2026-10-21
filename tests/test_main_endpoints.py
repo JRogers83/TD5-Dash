@@ -25,3 +25,8 @@ def test_relay_reports_not_switched_when_no_hardware():
     body = TestClient(main.app).post("/system/relay", json={"name": "amp", "state": True}).json()
     assert body["ok"] is False
     assert body["state"] is False
+
+
+def test_backlight_status_endpoint_never_raises():
+    body = TestClient(main.app).get("/system/backlight").json()
+    assert set(body) == {"device", "writable", "problem"}

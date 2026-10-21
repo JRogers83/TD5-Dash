@@ -302,7 +302,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 - `weather_service.py` uses live GPS coordinates for the next fetch, falling back to `WEATHER_LAT/LON` env vars when no fix is available
 
 **New REST endpoints**
-- `POST /system/brightness {"value": 0–255}` — `backlight.apply()` scales to the panel's `max_brightness` and writes `/sys/class/backlight/*/brightness`; needs the udev/`video`-group rule from `setup.sh`; reports `ok: false` in Docker
+- `POST /system/brightness {"value": 0–255}` — `backlight.apply()` scales to the panel's `max_brightness` and writes `/sys/class/backlight/*/brightness`; needs write permission on the sysfs file (fresh installs get a udev/`video`-group rule from `setup.sh`; an existing Pi that already changes brightness from the UI needs nothing); reports `ok: false` in Docker or when the write is refused. `GET /system/backlight` reports whether control works and drives the amber note on the Settings screen
 - `POST /system/relay {"name": "amp", "state": bool}` — self-contained no-op that only logs; no relay hardware is wired
 
 **OBD decoder correction** — complete rewrite of `decoder.py` and `service.py`:

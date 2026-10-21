@@ -88,3 +88,39 @@ def test_apply_on_startup_gives_up_when_write_denied(fake_backlight, isolated_db
                         {"ok": False, "value": v, "detail": "Permission denied"})
     asyncio.run(backlight.apply_on_startup())
     assert len(calls) == 1   # no retry loop on a permission failure
+
+
+# ── status(): on-screen diagnosis, since there is no shell on the vehicle ────
+
+@pytest.fixture(autouse=True)
+def _reset_last_result():
+    backlight.last_result = None
+    yield
+    backlight.last_result = None
+
+
+def test_status_no_device_is_not_a_problem(tmp_path, monkeypatch):
+    monkeypatch.setattr(backlight, "_BACKLIGHT_DIR_GLOB", str(tmp_path / "none" / "*"))
+    st = backlight.status()
+    assert st["device"] is None and st["problem"] is None   # Docker/dev: stay quiet
+
+
+def test_status_ok_when_writable(fake_backlight):
+    st = backlight.status()
+    assert st["writable"] is True and st["problem"] is None
+
+
+def test_status_reports_read_only_backlight(fake_backlight, monkeypatch):
+    monkeypatch.setattr(backlight.os, "access", lambda p, m: False)
+    st = backlight.status()
+    assert st["writable"] is False and "read-only" in st["problem"]
+
+
+def test_status_reports_last_failed_write(fake_backlight):
+    backlight.last_result = {"ok": False, "value": 100, "detail": "[Errno 13] Permission denied"}
+    assert "Permission denied" in backlight.status()["problem"]
+
+
+def test_apply_records_last_result(fake_backlight):
+    backlight.apply(90)
+    assert backlight.last_result["ok"] is True and backlight.last_result["value"] == 90

@@ -1044,7 +1044,23 @@ function _postBrightness(value) {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ value }),
-  }).catch(() => {});
+  }).then(() => refreshBacklightStatus()).catch(() => {});
+}
+
+// With no shell on the vehicle, say on-screen when brightness cannot reach the
+// panel (e.g. no write permission on the backlight) instead of failing silently.
+async function refreshBacklightStatus() {
+  try {
+    const st = await (await fetch('/system/backlight')).json();
+    const el = document.getElementById('bright-title');
+    if (!el) return;
+    // Heading carries the diagnosis so the column keeps its height; full reason on tap-hold/hover.
+    el.textContent = !st.problem ? 'Brightness'
+      : st.writable === false ? 'Brightness — read-only'
+      : 'Brightness — write failed';
+    el.title = st.problem || '';
+    el.classList.toggle('bright-title--problem', !!st.problem);
+  } catch (_) { /* backend mid-restart — leave as is */ }
 }
 
 function setBrightMode(mode) {
@@ -2268,6 +2284,7 @@ function connect() {
     }
     _updateSpeedUnitButtons();
     _loadBrightFromSettings(settings);
+    refreshBacklightStatus();
   } catch (_) {}
 
   connect();

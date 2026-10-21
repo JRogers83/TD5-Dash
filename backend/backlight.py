@@ -31,6 +31,11 @@ _BACKLIGHT_DIR_GLOB = "/sys/class/backlight/*"
 _STARTUP_RETRY_S = 2.0
 _STARTUP_DEADLINE_S = 60.0
 
+# Outcome of the most recent apply() — surfaced via status() so the Settings screen
+# can say so when brightness changes are not reaching the panel (there is no shell
+# on the vehicle to read logs from).
+last_result: dict | None = None
+
 
 def _clamp(value: int) -> int:
     return max(0, min(255, int(value)))
@@ -59,6 +64,30 @@ def apply(value: int) -> dict:
 
     Returns {"ok": bool, "value": clamped 0–255 level, "detail": str}. Never raises.
     """
+    global last_result
+    last_result = _apply(value)
+    return last_result
+
+
+def status() -> dict:
+    """Can brightness be controlled right now? Never raises, needs no root.
+
+    problem is None when all is well (or when there is simply no backlight, e.g.
+    Docker/dev), else a short human-readable reason for the Settings screen.
+    """
+    device = _find_device()
+    if device is None:
+        return {"device": None, "writable": False, "problem": None}
+    writable = os.access(os.path.join(device, "brightness"), os.W_OK)
+    problem = None
+    if not writable:
+        problem = "Backlight is read-only for the dash — brightness changes will not reach the screen"
+    elif last_result is not None and not last_result["ok"]:
+        problem = f"Last brightness write failed: {last_result['detail']}"
+    return {"device": device, "writable": writable, "problem": problem}
+
+
+def _apply(value: int) -> dict:
     value = _clamp(value)
     device = _find_device()
     if device is None:

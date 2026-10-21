@@ -333,6 +333,12 @@ async def spotify_play(cmd: _PlayContext) -> dict:
     return {"ok": True}
 
 
+@app.get("/system/backlight")
+async def backlight_status() -> dict:
+    """Can the dash control the backlight? Drives the note on the Settings screen."""
+    return await asyncio.to_thread(backlight.status)
+
+
 @app.post("/system/brightness")
 async def set_brightness(cmd: _BrightnessCmd) -> dict:
     """Apply a backlight level (0–255). Reports the real outcome: ok is False when

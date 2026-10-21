@@ -349,6 +349,10 @@ html, body {
 .settings-lower-label { margin-top: 6px; }
 
 /* ── Brightness controls ──────────────────────── */
+/* Heading turns amber when the backlight can't be controlled (no height change —
+   this column is already tight on a 400px layer). */
+.bright-title--problem { color: var(--c-amber); }
+
 .bright-mode-row {
   display: flex;
   gap: 6px;
