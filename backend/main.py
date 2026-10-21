@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import backlight
 import db
 import game_service
 import spotify_service
@@ -206,6 +207,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(gps_loop(manager)),
         asyncio.create_task(_discover_chromium_pid()),
         asyncio.create_task(_doom_startup_cleanup()),
+        asyncio.create_task(backlight.apply_on_startup()),
     ]
     if wittypi_service is not None:
         tasks.append(asyncio.create_task(wittypi_service.monitor_vin()))
@@ -333,18 +335,9 @@ async def spotify_play(cmd: _PlayContext) -> dict:
 
 @app.post("/system/brightness")
 async def set_brightness(cmd: _BrightnessCmd) -> dict:
-    """Set display backlight brightness (0–255). Writes to sysfs on Pi; no-op elsewhere."""
-    import glob, pathlib
-    value = max(0, min(255, cmd.value))
-    paths = glob.glob("/sys/class/backlight/*/brightness")
-    if paths:
-        try:
-            pathlib.Path(paths[0]).write_text(str(value))
-        except OSError as exc:
-            log.warning("Could not write brightness: %s", exc)
-    else:
-        log.debug("Brightness write skipped — no backlight device found (Docker/dev)")
-    return {"ok": True, "value": value}
+    """Apply a backlight level (0–255). Reports the real outcome: ok is False when
+    there is no backlight device (Docker/dev) or the sysfs write is refused."""
+    return await asyncio.to_thread(backlight.apply, cmd.value)
 
 
 @app.post("/system/relay")

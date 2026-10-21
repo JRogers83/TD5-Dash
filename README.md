@@ -382,7 +382,7 @@ The backend broadcasts per-topic JSON messages. Each view subscribes to one or m
 { "type": "weather",  "data": { "current": { "temp_c": 9, "weather_code": 61, ... }, ... } }
 { "type": "starlink", "data": { "state": "connected", "down_mbps": 187, ... } }
 { "type": "gps",      "data": { "lat": 52.4862, "lon": -1.8904, "alt": 142 } }
-{ "type": "system",   "data": { "brightness": 180, "cpu_temp_c": 45, ... } }
+{ "type": "system",   "data": { "cpu_temp_c": 45, ... } }
 ```
 
 ## REST Endpoints

@@ -40,6 +40,7 @@ _SETTINGS_DEFAULTS: dict[str, str] = {
     "throttle_wot": "90.0",
     "brightness_day": "180",
     "brightness_night": "80",
+    "brightness_mode": "day",   # "day" | "night" — active mode; the backlight is set from it at boot
     "speed_unit": "kph",   # "kph" | "mph" — global display unit for vehicle speed
     # weather_lat, weather_lon, weather_location are seeded dynamically
     # from .env at first run (see _seed_weather_defaults)

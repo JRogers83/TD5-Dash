@@ -118,7 +118,7 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 {"type": "weather",  "data": {"current": {"temp_c": 0, "humidity_pct": 0, "weather_code": 0, "wind_kph": 0}, "forecast": [], "location": "", "stale": false}}
 {"type": "starlink", "data": {"state": "offline", "down_mbps": 0, "up_mbps": 0, "latency_ms": 0, "ping_drop_pct": 0, "obstructed": false, "obstruction_pct": 0, "roaming": false, "uptime_s": 0, "alerts": []}}
 {"type": "gps",      "data": {"lat": 0, "lon": 0, "speed_kmh": 0, "heading_deg": 0, "fix": 0, "satellites_used": 0, "satellites_visible": 0, "hdop": null}}
-{"type": "system",   "data": {"brightness": 0, "cpu_temp_c": 0, "cpu_load_pct": 0, "ram_usage_pct": 0, "disk_usage_pct": 0, "uptime_s": 0, "throttled": false, "wifi_connected": false, "bt_connected": false, "override_mode": false, "sidelights": false}}
+{"type": "system",   "data": {"cpu_temp_c": 0, "cpu_load_pct": 0, "ram_usage_pct": 0, "disk_usage_pct": 0, "uptime_s": 0, "throttled": false, "wifi_connected": false, "bt_connected": false, "override_mode": false, "sidelights": false}}
 ```
 
 ---
@@ -142,7 +142,7 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 | `GET` | `/spotify/playlists` | Current user's playlists |
 | `GET` | `/spotify/playlist/{id}/tracks` | Tracks in a playlist |
 | `POST` | `/spotify/play` | Play a playlist — `{"context_uri": "...", "track_uri": "..."}` |
-| `POST` | `/system/brightness` | Set backlight brightness — `{"value": 0–255}` (writes sysfs on Pi) |
+| `POST` | `/system/brightness` | Apply backlight brightness — `{"value": 0–255}`; returns `{"ok", "value", "detail"}` with the real outcome (`ok: false` in Docker or if the sysfs write is refused) |
 | `POST` | `/system/relay` | Control a relay — `{"name": "amp", "state": bool}` (GPIO pending CarPiHAT) |
 | `POST` | `/system/update` | OTA update — git pull + pip install + restart |
 | `POST` | `/system/restart` | Restart service only (no code pull) |
@@ -289,11 +289,11 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 
 **Settings view overhaul** — three columns:
 1. Connectivity — 2-col grid of compact stat tiles: Wi-Fi, Bluetooth, Override, Data Feed, Starlink; each with status dot and text value
-2. Brightness — "Connectivity" / "Brightness" / "System" section headings in `stat-label` style; Day and Night brightness bars (visual fill, 0–255 range) with +/− buttons; mode toggle; active mode POSTed to `/system/brightness`
+2. Brightness — "Connectivity" / "Brightness" / "System" section headings in `stat-label` style; Day and Night brightness bars (visual fill, 0–255 range) with +/− buttons; mode toggle. Levels and active mode are stored in the settings DB (`brightness_day` / `brightness_night` / `brightness_mode`); `backlight.apply_on_startup()` sets the real backlight from them at service start, so the screen is correct from boot. Changes are saved via `POST /settings` then applied via `/system/brightness`
 3. Pi Health — CPU Temp, CPU Load, RAM, Disk as compact 2-col stat tile grid with colour-coded dots; Uptime and Throttle tiles; Controls section with amplifier relay toggle
 
 **New backend services**
-- `system_service.py` — reads real CPU temp (`/sys/class/thermal/thermal_zone0/temp`), backlight brightness (`/sys/class/backlight/*/brightness`), Wi-Fi state (`/sys/class/net/wlan0/operstate`), BT state (`rfkill`); falls back gracefully in Docker; includes `override_mode` and `sidelights` from `shared_state`; replaces permanent `mock_system_loop` (toggle via `SYSTEM_MOCK=1` if needed)
+- `system_service.py` — reads real CPU temp (`/sys/class/thermal/thermal_zone0/temp`), Wi-Fi state (`/sys/class/net/wlan0/operstate`), BT state (`rfkill`); falls back gracefully in Docker; includes `override_mode` and `sidelights` from `shared_state`; replaces permanent `mock_system_loop` (toggle via `SYSTEM_MOCK=1` if needed)
 - `carpihat_service.py` — GPIO skeleton for CarPiHAT PRO 5; documents pin assignments (IN1=ignition, IN2=override, IN3=sidelights, OUT1=amp relay); retained as reference only — not imported or used at runtime. Replaced by `ignition_service.py` for the dual-relay power system
 - `ignition_service.py` — GPIO ignition sense + graceful shutdown stub for dual-relay power system; not yet wired into `main.py` (pending hardware)
 - `shared_state.py` — module-level shared state between services: `gps_lat`, `gps_lon` (from Starlink GPS); `override_mode`, `sidelights_on` (from CarPiHAT)
@@ -303,7 +303,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 - `weather_service.py` uses live GPS coordinates for the next fetch, falling back to `WEATHER_LAT/LON` env vars when no fix is available
 
 **New REST endpoints**
-- `POST /system/brightness {"value": 0–255}` — writes `/sys/class/backlight/*/brightness` on Pi; no-op in Docker
+- `POST /system/brightness {"value": 0–255}` — `backlight.apply()` scales to the panel's `max_brightness` and writes `/sys/class/backlight/*/brightness`; needs the udev/`video`-group rule from `setup.sh`; reports `ok: false` in Docker
 - `POST /system/relay {"name": "amp", "state": bool}` — calls `carpihat_service.set_relay()`; GPIO pending CarPiHAT
 
 **OBD decoder correction** — complete rewrite of `decoder.py` and `service.py`:
