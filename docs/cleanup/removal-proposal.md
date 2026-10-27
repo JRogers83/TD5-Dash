@@ -1,7 +1,9 @@
 # Removal Proposal — housekeeping review
 
-**Branch:** `housekeeping-review` (NOT merged to main). **Date:** 2026-08-01.
-**Nothing has been deleted.** This is a proposal for your approval.
+**Status: COMPLETED (2026-10).** Merged to `main` via `housekeeping-review`. Section A (stray `;C` dirs) was cleaned up locally; B (CarPiHAT / `ignition_service.py`) was removed; C (todo lists) was committed under `docs/`, and the loose provisioning design now lives on `ota-system-provisioning`; D (doc drift) was fixed. Kept below for history.
+
+**Original header — Branch:** `housekeeping-review`. **Date:** 2026-08-01.
+**Nothing had been deleted when written.** This was a proposal for approval.
 
 How to use: for each item, tick the box if you want it removed, or edit/annotate.
 I'll only act on the items you approve. Items are grouped by confidence.

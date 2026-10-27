@@ -134,7 +134,9 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 | `GET` | `/pages` | Page visibility flags |
 | `POST` | `/pages` | Update page visibility — `{"key": 0\|1, ...}` |
 | `GET` | `/history` | Engine history — `?time_range=hour\|day\|week\|month\|year\|all` |
-| `POST` | `/obd/clear-dtc` | Clear stored DTC fault codes |
+| `POST` | `/obd/clear-dtc` | Clear DTCs — **not implemented**: no verified ECU clear frame exists, so it returns an honest "not supported" result and sends nothing |
+| `GET` | `/obd/dtc/{code}` | Fault-code library entry (explanation, likely causes, severity) |
+| `POST` | `/obd/full-test` | Run the 7-stage K-Line diagnostic (`obd/pi_diag.py`); progress streams over WS as `{"type": "obd_test", ...}` |
 | `GET` | `/api/state` | Full state snapshot for all topics (Home Assistant) |
 | `GET` | `/api/state/{topic}` | Single-topic state snapshot |
 | `POST` | `/spotify/command` | Playback control — `{"action": "play"\|"pause"\|"next"\|"prev"}` |
@@ -148,6 +150,11 @@ Per-topic messages to avoid a monolithic payload and keep views decoupled:
 | `POST` | `/system/restart` | Restart service only (no code pull) |
 | `POST` | `/system/rollback` | Roll back to the previous version — undoes the most recent `/system/update` |
 | `GET` | `/system/version` | Current commit + rollback availability, for the Settings UI |
+| `GET` | `/system/backlight` | Whether backlight control works (device found, writable) — drives the amber note on the Settings screen |
+| `POST` | `/system/shutdown` | Clean Pi shutdown (delayed so the response returns first) |
+| `GET` | `/system/game-mode/status` | Doom mode state + last error |
+| `POST` | `/system/game-mode/start` | Start Doom mode (pauses Spotify, freezes Chromium, launches `games/doom/launcher.sh`) |
+| `POST` | `/system/game-mode/stop` | Stop Doom mode and restore Chromium / Spotify |
 
 ---
 
@@ -169,7 +176,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 | 1 | Bench Prototype — FastAPI backend, WebSocket hub, mock data, kiosk UI scaffold | **Complete** |
 | 2 | OBD Integration — TD5 K-Line service | **Complete (vehicle-verified 2026-03-21)** |
 | 3 | Victron, Spotify, Weather, Starlink | **Complete** |
-| 4 | Power System & Vehicle Install | Pending |
+| 4 | Power System & Vehicle Install | **Complete** — Witty Pi 5 HAT+ power management; installed in the vehicle and in daily use |
 | 5 | Polish | **In Progress** — SQLite persistence, 2D navigation, DTC, throttle calibration, diagnostics, history charts, test suite, OTA update complete; Plymouth splash and boot time optimisation complete from earlier work |
 
 ---
@@ -181,7 +188,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 - Mock data broadcaster — engine, spotify, victron, system topics
 - Static files served from `/` (WebSocket at `/ws` matched first)
 
-**Frontend** — five swipeable views, touch-only carousel, 1280×400
+**Frontend** — five swipeable views (later extended with vertical layers — see "Later additions"), touch-only carousel, 1280×400
 - Engine: RPM / Boost / Throttle radial gauges (Canvas Gauges), Battery / Coolant / Air Temp / Fuel Temp stat tiles with colour-coded status dots
 - Spotify: album art, track / artist / album, progress bar, prev / play-pause / next controls
 - Victron: SoC SVG arc gauge, voltage, current, solar yield, charge-state badge
@@ -219,11 +226,11 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 
 **⚠ Protocol correction (March 2026):** All KWP2000 frames REQUIRE an ISO 14230 checksum byte (sum of all preceding bytes mod 256). Prior code omitted checksums — this was the root cause of all failed vehicle communication attempts. Verified frames: `81 13 F7 81 0C` (StartComm), `02 10 A0 B2` (DiagSession), `02 27 01 2A` (RequestSeed). See `documentation/TD5-ECU-Protocol-Technical-Reference.md`.
 
-**⚠ PID mapping note:** The tech reference documents PID `0x01` returning all 22 fuelling parameters in one response. The individual PIDs (0x09, 0x1A, etc.) are also defined. The diagnostic tool (`tools/td5_diag.py`) probes both approaches to determine which this ECU supports.
+**⚠ PID mapping note:** The tech reference documents PID `0x01` returning all 22 fuelling parameters in one response. The individual PIDs (0x09, 0x1A, etc.) are also defined. The diagnostic tool (`tools/td5_pc_diag.py`) probes both approaches to determine which this ECU supports.
 
-**Diagnostic tool: `tools/td5_diag.py`**
+**Diagnostic tool: `tools/td5_pc_diag.py`**
 - Progressive 7-stage verification: USB/FTDI detection → protocol self-test → fast-init → StartComm → DiagSession → SecurityAccess → PID probe → continuous poll
-- Run `python td5_diag.py` (software-only) or `python td5_diag.py --vehicle` (full test)
+- Run `python td5_pc_diag.py` (software-only) or `python td5_pc_diag.py --vehicle` (full test)
 - `--timing-sweep` flag to try a range of fast-init LOW pulse timings
 - Logs all TX/RX bytes to timestamped file, `--verbose` for full hex dumps
 
@@ -262,7 +269,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 **Starlink — `backend/starlink_service.py`**
 - `starlink-grpc-core` library polling `192.168.100.1:9200` (Starlink Mini local API)
 - Broadcasts state, throughput, latency, ping drop, obstruction, roaming flag, active alerts
-- GPS polling: publishes `{"type": "gps", ...}` when GPS is enabled in Starlink app and has a fix
+- GPS: originally read from the dish; now superseded by `gps_service.py` (gpsd + USB receiver) — see "Later additions"
 - Blocking gRPC I/O in `ThreadPoolExecutor` (same pattern as OBD)
 - ⚠ Not yet tested against real Starlink hardware — field names marked `# hw-verify`
 - Controlled by `STARLINK_MOCK`; configured via `STARLINK_HOST`, `STARLINK_POLL_INTERVAL`
@@ -295,10 +302,10 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 **New backend services**
 - `system_service.py` — reads real CPU temp (`/sys/class/thermal/thermal_zone0/temp`), Wi-Fi state (`/sys/class/net/wlan0/operstate`), BT state (`rfkill`); falls back gracefully in Docker; includes `override_mode` and `sidelights` from `shared_state`; replaces permanent `mock_system_loop` (toggle via `SYSTEM_MOCK=1` if needed)
 - *(removed 2026-08)* `carpihat_service.py` and `ignition_service.py` — dormant, never imported; power is handled by `wittypi_service.py`. See git history for the old CarPiHAT pin map
-- `shared_state.py` — module-level shared state between services: `gps_lat`, `gps_lon` (from Starlink GPS); `override_mode`, `sidelights_on` (reserved for the Witty Pi override hook)
+- `shared_state.py` — module-level shared state between services: `gps_lat`, `gps_lon` and speed/heading/fix (written by `gps_service`); `override_mode`, `sidelights_on` (reserved for the Witty Pi override hook)
 
 **GPS → weather integration**
-- `starlink_service.py` updates `shared_state.gps_lat/lon` when a GPS fix arrives
+- `gps_service.py` updates `shared_state.gps_lat/lon` when a GPS fix arrives
 - `weather_service.py` uses live GPS coordinates for the next fetch, falling back to `WEATHER_LAT/LON` env vars when no fix is available
 
 **New REST endpoints**
@@ -332,7 +339,7 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 - Removed all runtime references to `carpihat_service.py`; the file and the `ignition_service.py` stub were later deleted (2026-08) — power is the Witty Pi
 
 **Test framework**
-- 99 pytest tests covering decoder vectors, protocol checksums, WS hub connection management, mock schema validation; `pytest.ini` configuration; `tests/` directory with `conftest.py`, `test_decoder.py`, `test_protocol.py`, `test_ws_hub.py`, `test_mock_service.py`
+- 210 pytest tests (run `python -m pytest -q` from the repo root; ~12 s) covering decoder vectors, protocol checksums, WS hub, mock schema, update/rollback, backlight, system service, Victron staleness and the REST endpoints; `pytest.ini` configuration; see `tests/`
 
 **DTC fault codes**
 - `dtc_lookup.py` — TD5 DTC fault code dictionary; faults tile replaces fuel temp on Engine layer 0; DTC detail on Engine layer 1 with clear button (`POST /obd/clear-dtc`); Raw Data on Engine layer 3
@@ -358,11 +365,38 @@ Do not use Windows-specific paths or tools in any runtime code. Target is Linux/
 **Engine history**
 - SQLite `engine_history` table with periodic inserts; `/history` endpoint with `?time_range=hour|day|week|month|year|all`; Canvas line charts on Engine layer 2
 
-**Reverse geocoding**
-- Nominatim integration in Starlink service; location name persisted to settings DB
+**Reverse geocoding** — *not implemented.* An early plan called for Nominatim; no such code exists. The weather location label is a static string (`WEATHER_LOCATION` / settings DB) and does not follow GPS
 
 **OTA update**
 - `POST /system/update` (git pull + pip install + restart) and `POST /system/restart` (restart service only) endpoints; frontend Update button on Settings view
+
+---
+
+## Later additions (June–October 2026)
+
+Work done after the original phases. Specs and plans for most of it live in `docs/superpowers/`.
+
+**GPS** — `gps_service.py` reads gpsd (USB receiver) and publishes the `gps` topic; it also writes `shared_state` (lat/lon/speed/heading/fix), which `weather_service` uses for its next fetch. Configured by `GPS_MOCK`, `GPSD_HOST`, `GPSD_PORT`. The Starlink dish no longer supplies GPS. The Starlink view's layer 1 is a GPS diagnostics screen.
+
+**Power** — `wittypi_service.py` (Witty Pi 5 HAT+, `WITTYPI_ENABLED=1`) watches VIN over I2C and requests a clean shutdown when it drops below `WITTYPI_VIN_SHUTDOWN_THRESHOLD_MV`. The `main.py` teardown stops Doom mode first. This replaces the CarPiHAT and the discrete ignition circuit (both deleted).
+
+**Navigation layers** — Engine has 4 layers (live, detail/trip/faults, history charts, raw data). Victron layer 1 is detailed SmartShunt/MPPT/Orion stats. Starlink layer 1 is GPS diagnostics. Settings: 0 = connectivity / brightness / Pi health / speed units, 1 = Software (version, Check for Updates, Roll Back), 2 = page visibility, 3 = setup (throttle calibration), 4 = diagnostics (service health, shutdown). Layers can be hidden via the `pages` table.
+
+**Faults** — tappable fault-code library (`GET /obd/dtc/{code}`). `POST /obd/clear-dtc` is honest about being unimplemented (no verified clear frame exists).
+
+**Speed units** — kph/mph toggle on Settings, stored as the `speed_unit` setting.
+
+**OTA update + rollback** — `update_service.py`: Update = `git pull` + `pip install` + restart. Each update pushes the previous commit hash onto `update_history` (db.py); Rollback runs `git reset --hard` to it. This assumes `origin/main` is never rebased or force-pushed. `backend/requirements.txt` pins minimums only, so a rollback does not restore old dependency versions. An update clears the Chromium profile, so browser-side state (localStorage) resets.
+
+**Brightness** — `backlight.py`: day/night levels and mode live in the settings DB, applied to the real backlight at service start and on change. `GET /system/backlight` reports whether the sysfs write is possible and drives an amber note on Settings when it is not.
+
+**Doom mode** — `game_service.py`, `games/doom/` (lzdoom, `launcher.sh`, touch `overlay.py`), `frontend/game.html`. Starting it pauses Spotify, SIGSTOPs the Chromium tree and launches lzdoom; stopping restores both. Default WAD is FreeDoom; users can supply their own in `wads/`. Tag `v-doom-2p-stable` marks a known-good two-player state.
+
+**Boot** — the logo is held through the black gap between Plymouth and X (see `documentation/boot-splash-investigation.md`).
+
+**Parked: OTA system provisioning** — branch `ota-system-provisioning` (pushed, not merged). A Software → System panel plus a root provisioner, so apt packages and system config could be changed from the UI. Parked because it needs a one-time root action (a sudoers rule) that the Update button cannot perform. Read its design spec (`docs/superpowers/specs/2026-08-01-ota-system-provisioning-design.md` on that branch), especially §12, before merging.
+
+**Hardware / access** — the Pi boots from an **M.2 SSD** (not an SD card). The vehicle Pi has no permanent keyboard or screen; shell access means sitting in the cab with a laptop over SSH, which is deliberately rare. Prefer changes that ship through the Update button.
 
 ---
 
@@ -377,55 +411,55 @@ TD5-Dash/
 ├── .dockerignore
 ├── .env                    # local secrets — not committed
 ├── .env.example            # documented reference for all env vars
-├── LR-Logo.png                 # Land Rover badge source image (used by Plymouth splash)
-├── documentation/
-│   ├── SPEC.md
-│   ├── pi-setup.md             # Raspberry Pi setup guide (flash → kiosk)
-│   ├── home-assistant.md       # Home Assistant REST sensor integration
-│   ├── starlink-mini-local-api.md
-│   ├── TD5-ECU-Protocol-Technical-Reference.md   # Protocol research from open-source projects
-│   └── TD5-ECU-Confirmed-Protocol.md             # Vehicle-verified protocol, PIDs, session trace
+├── LR-Logo.png             # Land Rover badge source image (used by Plymouth splash)
+├── docs/                   # process artifacts: plans, specs, todo lists, review notes
+│   ├── superpowers/specs/  # design specs (doom mode, OTA rollback, GPS/Witty Pi, OBD diag)
+│   ├── superpowers/plans/  # matching implementation plans
+│   ├── cleanup/            # housekeeping review + removal proposal (completed)
+│   └── td5-dash-todo*.md   # driving todo lists, rounds 1 and 2
+├── documentation/          # reference: SPEC, pi-setup, protocol docs, Starlink, Home Assistant, Spotify re-auth, driver-profiles proposal
 ├── backend/
 │   ├── main.py             # FastAPI app — lifespan tasks, WS endpoint, REST endpoints
 │   ├── ws_hub.py           # WebSocket connection manager
-│   ├── db.py               # SQLite settings/pages/engine_history database
-│   ├── mock_service.py     # Static mock data for all six topics
-│   ├── shared_state.py     # Module-level shared state (GPS coords, override/sidelights state)
-│   ├── system_service.py   # Real CPU temp, backlight, Wi-Fi/BT monitoring
+│   ├── db.py               # SQLite settings/pages/engine_history/update_history database
+│   ├── mock_service.py     # Static mock data for the mockable topics
+│   ├── shared_state.py     # Module-level shared state (GPS fix, override/sidelights state)
+│   ├── system_service.py   # Real CPU temp, Wi-Fi/BT monitoring
+│   ├── backlight.py        # Backlight sysfs write + boot-time apply of saved brightness
+│   ├── update_service.py   # OTA update/rollback orchestration (git + pip + restart)
+│   ├── game_service.py     # Doom mode lifecycle + /system/game-mode/* endpoints
+│   ├── gps_service.py      # gpsd client — publishes the "gps" topic, feeds shared_state
 │   ├── wittypi_service.py  # Witty Pi 5 power management (WITTYPI_ENABLED=1)
 │   ├── spotify_auth.py     # OAuth token manager (refresh + in-memory cache)
 │   ├── spotify_service.py  # Spotify Web API polling + playlist/command/like
 │   ├── weather_service.py  # Open-Meteo polling + stale detection (uses GPS coords)
-│   ├── starlink_service.py # Starlink gRPC polling + GPS (updates shared_state)
+│   ├── starlink_service.py # Starlink gRPC status polling
 │   ├── obd/                # TD5 K-Line OBD service
-│   │   ├── __init__.py
 │   │   ├── connection.py   # PyFtdi K-Line connection + fast-init
 │   │   ├── protocol.py     # KWP2000 frame builder + TD5 seed-key algorithm
 │   │   ├── decoder.py      # Live data frame parser
-│   │   ├── dtc_lookup.py   # TD5 DTC fault code dictionary
-│   │   └── service.py      # Session management + poll loop
+│   │   ├── dtc_lookup.py   # TD5 DTC fault code dictionary + fault library
+│   │   ├── service.py      # Session management + poll loop
+│   │   └── pi_diag.py      # 7-stage on-Pi diagnostic (POST /obd/full-test)
 │   ├── victron/            # Victron BLE service
-│   │   ├── __init__.py
 │   │   ├── scanner.py      # BLE scanner + VictronState dataclass
 │   │   └── service.py      # Publish loop
 │   └── requirements.txt
 ├── frontend/
-│   ├── index.html          # Single-page app — all five views
+│   ├── index.html          # Single-page app — all views and layers
+│   ├── game.html           # Doom mode page
 │   ├── style.css           # All styles — dark theme, 1280×400 layout
 │   ├── app.js              # WS client, view handlers, carousel, visualiser, browse
 │   └── lib/
 │       └── gauge.min.js    # Canvas Gauges v2.1.7 (local, no CDN)
+├── games/doom/             # lzdoom binary + pk3s, launcher.sh, touch overlay, per-player ini (27 MB tracked)
+├── wads/                   # user-supplied WADs (FreeDoom is the default)
 ├── tools/
 │   ├── spotify_auth_setup.py  # One-time OAuth helper — run locally
-│   └── td5_diag.py            # TD5 ECU diagnostic tool — progressive K-Line verification
-├── data/                   # Runtime SQLite database (gitignored, created at startup)
+│   └── td5_pc_diag.py         # Laptop-side TD5 ECU diagnostic — progressive K-Line verification
+├── data/                   # Runtime SQLite database + logs (gitignored, created at startup)
 ├── pytest.ini              # Pytest configuration
-├── tests/
-│   ├── conftest.py
-│   ├── test_decoder.py
-│   ├── test_protocol.py
-│   ├── test_ws_hub.py
-│   └── test_mock_service.py
+├── tests/                  # 210 tests — roughly one test_*.py per backend module, plus endpoint tests
 └── deploy/
     ├── setup.sh            # Pi first-time setup script (run as root)
     ├── td5-dash.service    # systemd unit template

@@ -127,7 +127,7 @@ async def broadcast_loop(manager: ConnectionManager) -> None:
         # After the first success switch to the normal 30-minute cadence.
         interval = FETCH_INTERVAL_S if cached is not None else STARTUP_RETRY_S
         if now - last_fetch >= interval:
-            # Use live GPS coordinates if Starlink has a fix, else fall back to env vars
+            # Use live GPS coordinates if gps_service has a fix, else fall back to env vars
             lat = shared_state.gps_lat if shared_state.gps_lat is not None else LAT
             lon = shared_state.gps_lon if shared_state.gps_lon is not None else LON
             log.info("Fetching weather for %.4f, %.4f …", lat, lon)

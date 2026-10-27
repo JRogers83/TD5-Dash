@@ -122,9 +122,9 @@ Both Victron devices broadcast data at approximately 1Hz via BLE. The Pi 5 has o
 | Parameter | Value |
 |-----------|-------|
 | Spotify | Raspotify (librespot wrapper) — Pi becomes a Spotify Connect device |
-| Audio output | Bluetooth A2DP to head unit (preferred), or CarPiHAT PRO 5 built-in DAC, or USB DAC as fallback |
+| Audio output | Bluetooth A2DP to head unit (preferred), or USB DAC as fallback |
 
-The Pi 5 has no 3.5mm audio jack. If the CarPiHAT PRO 5 is used, its built-in 192kHz/24-bit Burr-Brown DAC with 3.5mm jack provides high-quality analogue output directly to the head unit. Otherwise, a USB DAC (e.g. Sabrent AU-MMSA, approx. £7) provides the same function.
+The Pi 5 has no 3.5mm audio jack (the CarPiHAT PRO 5 DAC option was dropped along with the CarPiHAT). A USB DAC (e.g. Sabrent AU-MMSA, approx. £7) provides the same function.
 
 Head unit — Current: Pioneer DEH-1320MP (front 3.5mm aux only, no Bluetooth). Replacement recommended: any cheap Bluetooth single-DIN mechless unit. Pioneer MVH-S320BT identified as strong candidate. Head unit decision decoupled from project.
 
@@ -198,11 +198,11 @@ victron-ble library. Passive BLE listener for SmartShunt and MPPT broadcasts. Pu
 
 **Audio Service**
 
-Raspotify (librespot). Spotify Connect device. Audio routed to head unit via BT A2DP, CarPiHAT DAC, or USB DAC.
+Raspotify (librespot). Spotify Connect device. Audio routed to head unit via BT A2DP or USB DAC.
 
 **System Service**
 
-GPIO/CarPiHAT input monitoring (ignition, sidelights), brightness control, shutdown management (30s grace period), SoC temp monitoring, override mode detection.
+Witty Pi 5 VIN monitoring and clean shutdown (`wittypi_service.py`), backlight control (`backlight.py`), SoC temp and Wi-Fi/BT monitoring (`system_service.py`).
 
 ### 4.3 Frontend UI
 

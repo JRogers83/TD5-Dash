@@ -2,18 +2,15 @@
 Starlink Mini service — gRPC status poller.
 
 Polls the Starlink dish at 192.168.100.1:9200 every POLL_INTERVAL_S seconds
-and publishes two WebSocket topics:
+and publishes one WebSocket topic:
 
   {"type": "starlink", "data": {state, down_mbps, up_mbps, ...}}
-  {"type": "gps",      "data": {lat, lon, alt}}     ← only when GPS enabled
+
+GPS is not read from the dish; it comes from gps_service (gpsd).
 
 The gRPC API is unauthenticated and available on the local network only.
 The Pi is assumed to be connected to the Starlink Mini's integrated Wi-Fi,
 which makes 192.168.100.1 natively reachable without any static routes.
-
-GPS requires one-time opt-in in the Starlink app:
-  Settings → Advanced → Debug Data → Starlink Location → Allow on local network
-The GPS section of the Starlink view will read "Not enabled" until this is done.
 
 Configuration:
   STARLINK_HOST          gRPC target (host:port)  default: 192.168.100.1:9200

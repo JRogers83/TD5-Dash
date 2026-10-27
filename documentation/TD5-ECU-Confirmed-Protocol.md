@@ -385,5 +385,5 @@ RX:  01 C2 C3                               Session ended
 | `backend/obd/connection.py` | PyFtdi K-Line driver, fast-init, echo consumption, frame I/O with P3 timing |
 | `backend/obd/decoder.py` | Per-PID response parsers |
 | `backend/obd/service.py` | Session management, poll loop, WebSocket broadcast |
-| `tools/td5_diag.py` | Standalone diagnostic tool — progressive 7-stage verification |
+| `tools/td5_pc_diag.py` | Standalone diagnostic tool — progressive 7-stage verification |
 | `documentation/TD5-ECU-Protocol-Technical-Reference.md` | Full protocol spec from open-source research (some details differ from our ECU) |

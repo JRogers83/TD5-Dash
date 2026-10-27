@@ -8,7 +8,7 @@ and OBD run blocking I/O in ThreadPoolExecutor threads; they must use
 asyncio.run_coroutine_threadsafe for writes, or write only from the async layer).
 
 Currently holds:
-  gps_lat / gps_lon    — most recent GPS fix from Starlink (None until first fix)
+  gps_lat / gps_lon    — most recent GPS fix from gps_service (None until first fix)
   override_mode        — override switch state (leisure battery bypass)
   sidelights_on        — sidelights input state (auto-brightness trigger)
 """

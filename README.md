@@ -286,13 +286,13 @@ A standalone diagnostic tool verifies the full communication chain without runni
 
 ```bash
 # Software-only (no cable needed) — verifies protocol code
-python tools/td5_diag.py
+python tools/td5_pc_diag.py
 
 # Full vehicle test (ignition ON or engine running, cable connected)
-python tools/td5_diag.py --vehicle --verbose
+python tools/td5_pc_diag.py --vehicle --verbose
 
 # Try a range of fast-init timings if the default doesn't connect
-python tools/td5_diag.py --vehicle --verbose --timing-sweep
+python tools/td5_pc_diag.py --vehicle --verbose --timing-sweep
 ```
 
 The tool runs 7 progressive stages: USB/FTDI detection, protocol self-test, fast-init + StartCommunication, StartDiagnosticSession, seed-key authentication, PID probe, and continuous polling. Results are logged to a timestamped text file in `tools/`.
@@ -356,7 +356,7 @@ TD5-Dash/
 │
 ├── tools/
 │   ├── spotify_auth_setup.py  # One-time OAuth helper — run locally to get refresh token
-│   └── td5_diag.py            # TD5 ECU diagnostic tool — progressive K-Line verification
+│   └── td5_pc_diag.py          # TD5 ECU diagnostic tool — progressive K-Line verification
 │
 ├── deploy/
 │   ├── setup.sh            # Pi first-time setup script (run as root)

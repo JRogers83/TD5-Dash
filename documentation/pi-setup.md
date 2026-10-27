@@ -317,7 +317,7 @@ The cable will no longer appear as a COM port — that is expected.
 **Desk test (no vehicle needed):**
 
 ```bash
-python tools/td5_diag.py
+python tools/td5_pc_diag.py
 ```
 
 This runs stages 1–2: USB/FTDI detection, bitbang verification, frame checksum tests, and all 15 seed-key algorithm vectors. No cable or vehicle required for these stages.
@@ -325,7 +325,7 @@ This runs stages 1–2: USB/FTDI detection, bitbang verification, frame checksum
 **Vehicle test (ignition ON or engine running, cable in OBD port):**
 
 ```bash
-python tools/td5_diag.py --vehicle --verbose
+python tools/td5_pc_diag.py --vehicle --verbose
 ```
 
 This runs all 7 stages: fast-init, StartCommunication, StartDiagnosticSession, seed-key authentication, PID probe, and continuous polling. Results are logged to a timestamped file in `tools/`.
@@ -333,7 +333,7 @@ This runs all 7 stages: fast-init, StartCommunication, StartDiagnosticSession, s
 If the first timing doesn't connect, try a wider sweep:
 
 ```bash
-python tools/td5_diag.py --vehicle --verbose --timing-sweep
+python tools/td5_pc_diag.py --vehicle --verbose --timing-sweep
 ```
 
 **Important notes from vehicle testing:**
